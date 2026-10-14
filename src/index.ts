@@ -18,10 +18,11 @@ import { createSidechainCommands } from './commands.ts'
 import { SIDE_PERSONA } from './prompts.ts'
 import { createSettlementSilence } from './settle-silence.ts'
 import type { SideDeps } from './side.ts'
+import { sidechainModesProjection } from './sidechain-projection.ts'
 
 export const name = 'dsh-sidechain'
 
-export const inject = ['agents', 'subagents']
+export const inject = ['agents', 'subagents', 'sessionProjections']
 
 /** Plugin config: deployment-varying behavior, validated from cordis.yml. */
 export interface Config {
@@ -50,10 +51,11 @@ export function apply(ctx: Context, config: Config): () => void {
     ...(toolFilter === undefined ? {} : { toolFilter }),
   }
   const settlementSilence = createSettlementSilence(ctx)
+  ctx.sessionProjections.register(sidechainModesProjection)
   // Commands are an optional surface: without a command registry the plugin
   // still loads harmlessly in minimal deployments.
   ctx.inject(['commands'], (commandCtx) => {
-    for (const definition of createSidechainCommands(ctx.subagents, deps, settlementSilence)) {
+    for (const definition of createSidechainCommands(ctx.subagents, deps, settlementSilence, ctx.sessionProjections)) {
       commandCtx.commands.register(definition)
     }
   })

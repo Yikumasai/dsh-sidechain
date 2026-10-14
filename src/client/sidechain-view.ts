@@ -10,18 +10,17 @@
  * seed marker, so continuation-turn seed markers do not hide older turns.
  *
  * Live streaming: `assistant/message` events only land when a step completes,
- * but `assistant/chunk` events stream token-level text and reasoning deltas.
+ * but the follow snapshot carries the active assistant stream's text and reasoning deltas.
  * The mapping accumulates both per block and supersedes them with the
  * assembled message once it lands. Tail polls merge into a per-child event
  * cache, so old rounds remain visible without re-reading the inherited seed.
  */
 
-import type { SessionRemote } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionRemote, SessionEventLike as SessionEvent } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionAddress, SessionFollowFrame, SessionHistoryRecord } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import { decodeStorageRecord } from '@deepseek-ai/dsh-session/chunk-rows'
-import type { SubagentAddress, SubagentPromptRequestId } from '@deepseek-ai/dsh-subagent/client'
+import { expandAssistantStream, type AssistantStreamRecord } from '@deepseek-ai/dsh-llm/assistant-stream'
+import type { SubagentAddress, SubagentPromptRequest, SubagentPromptRequestId } from '@deepseek-ai/dsh-subagent/client'
 import { lastActivity } from './sidechain-activity.ts'
 
 /**
@@ -185,7 +184,7 @@ export function transcriptRows(entries: readonly TranscriptEntry[]): TranscriptR
         }
         break
       }
-      case 'assistant/chunk': {
+      case 'assistant/live-chunk': {
         const chunk = event.data.chunk
         if ((chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta') || chunk.text === '') break
         const kind = chunk.type === 'text-delta' ? 'assistant' : 'reasoning'
@@ -253,13 +252,12 @@ export function transcriptRows(entries: readonly TranscriptEntry[]): TranscriptR
       }
       case 'tool/result': {
         const data = event.data
-        const resultBlock = data.message.content[0]
-        const callId = resultBlock?.toolCallId
+        const callId = data.message.toolCallId
         const index = callId === undefined ? undefined : callRows.get(callId)
         const error = data.error
         // A result is failed on the explicit event error OR the block's own
         // isError flag (tools report hard failures either way).
-        const failed = error !== undefined || resultBlock?.isError === true
+        const failed = error !== undefined || data.message.isError === true
         if (index !== undefined) {
           const row = rows[index]
           if (row !== undefined && row.kind === 'tool') {
@@ -268,7 +266,7 @@ export function transcriptRows(entries: readonly TranscriptEntry[]): TranscriptR
               failed,
               detail: {
                 ...row.detail,
-                ...(resultBlock?.content.length === 0 ? {} : { result: resultBlock?.content }),
+                ...(data.message.content.length === 0 ? {} : { result: data.message.content }),
                 ...(data.meta === undefined ? {} : { meta: data.meta }),
                 ...(error === undefined ? {} : { error }),
               },
@@ -323,10 +321,10 @@ export function producedPaths(entries: readonly TranscriptEntry[]): string[] {
   for (let i = seedEnd + 1; i < entries.length; i++) {
     const event = entries[i]?.event
     if (event === undefined || event.type !== 'tool/result') continue
-    const block = event.data.message.content[0]
-    const callId = block?.toolCallId
+    const message = event.data.message
+    const callId = message.toolCallId
     if (callId === undefined) continue
-    if (event.data.error !== undefined || block?.isError === true) failedCallIds.add(callId)
+    if (event.data.error !== undefined || message.isError === true) failedCallIds.add(callId)
   }
   const paths: string[] = []
   const seen = new Set<string>()
@@ -400,10 +398,13 @@ export async function fetchTranscript(
   if (entries === null) return null
   const previous = transcriptEntryCache.get(address.childSessionId) ?? []
   const bySeq = new Map(previous.map(entry => [entry.event.seq, entry]))
-  for (const entry of entries) bySeq.set(entry.event.seq, entry)
+  for (const entry of entries) {
+    if (entry.event.type !== 'assistant/live-chunk') bySeq.set(entry.event.seq, entry)
+  }
   const transcript = [...bySeq.values()].sort((a, b) => a.event.seq - b.event.seq)
   transcriptEntryCache.set(address.childSessionId, transcript)
-  const rows = await hydrateTranscriptImages(sessions, address.childSessionId, transcriptRows(transcript))
+  const live = entries.filter(entry => entry.event.type === 'assistant/live-chunk')
+  const rows = await hydrateTranscriptImages(sessions, address.childSessionId, transcriptRows([...transcript, ...live]))
   return {
     rows,
     produced: producedPaths(transcript),
@@ -526,12 +527,13 @@ async function fetchSeedCutEntries(
     mode: childAddress.mode,
   }
   let throughSeq: number | undefined
+  const live: TranscriptEntry[] = []
   try {
     for (let page = 0; page < (pageCap ?? Number.POSITIVE_INFINITY); page++) {
       let records: readonly SessionHistoryRecord[]
       let hasMore: boolean
       if (throughSeq === undefined) {
-        const iterator = sessions.follow({ address, maxMessages: pageMessages })[Symbol.asyncIterator]()
+        const iterator = sessions.follow({ address, maxMessages: pageMessages, assistantStream: true })[Symbol.asyncIterator]()
         const first = await iterator.next()
         await iterator.return?.()
         if (first.done || first.value.type !== 'snapshot') return null
@@ -539,6 +541,15 @@ async function fetchSeedCutEntries(
         throughSeq = snapshot.cursor
         records = snapshot.records
         hasMore = snapshot.hasMore
+        const active = snapshot.assistantStream?.activeAttempt
+        if (active !== undefined) {
+          for (const { time, chunk } of expandAssistantStream(active.stream as AssistantStreamRecord[])) {
+            live.push({ event: {
+              type: 'assistant/live-chunk', seq: snapshot.cursor + 1, time,
+              data: { attemptId: active.attemptId, turn: active.turn, step: active.step, chunk },
+            } })
+          }
+        }
       } else {
         const response = await sessions.page({
           address,
@@ -590,28 +601,12 @@ async function fetchSeedCutEntries(
   } catch {
     return null
   }
-  return collected
+  return [...collected, ...live]
 }
 
-/** Expand alpha's packed history rows at the Remote boundary. */
+/** Read durable events from the Remote journal envelopes. */
 function expandHistoryRecords(records: readonly SessionHistoryRecord[]): TranscriptEntry[] {
-  const entries: TranscriptEntry[] = []
-  for (const record of records) {
-    if (record.type === 'event') {
-      entries.push({ event: record.event as unknown as SessionEvent })
-      continue
-    }
-    const packed = record.event
-    const type = packed.type.replace('chunkrow/', '')
-    const decoded = decodeStorageRecord({
-      type,
-      seq0: packed.seq,
-      time0: packed.time,
-      data: packed.data,
-    })
-    entries.push(...decoded.map(event => ({ event })))
-  }
-  return entries
+  return records.map(record => ({ event: record.event as SessionEvent }))
 }
 
 /**
@@ -624,13 +619,7 @@ function expandHistoryRecords(records: readonly SessionHistoryRecord[]): Transcr
  * @returns whether the prompt was accepted.
  */
 export async function sendPrompt(
-  subagents: { prompt: (request: {
-    requestId: SubagentPromptRequestId
-    parentSessionId: SubagentAddress['parentSessionId']
-    childSessionId: SubagentAddress['childSessionId']
-    mode: 'continuable'
-    content: ContentBlock[]
-  }) => Promise<{ ok: boolean }> },
+  subagents: { prompt: (request: SubagentPromptRequest) => Promise<{ ok: boolean }> },
   address: Extract<SubagentAddress, { mode: 'continuable' }>,
   text: string,
 ): Promise<boolean> {
@@ -638,7 +627,8 @@ export async function sendPrompt(
     const response = await subagents.prompt({
       requestId: crypto.randomUUID() as SubagentPromptRequestId,
       ...address,
-      content: [{ type: 'text', text }] satisfies readonly ContentBlock[],
+      delivery: 'queue',
+      content: [{ type: 'text', text }],
     })
     return response.ok === true
   } catch {

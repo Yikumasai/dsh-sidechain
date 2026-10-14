@@ -15,9 +15,9 @@ const PLUGIN_ID = '@dsh-external/dsh-sidechain'
 const PLATFORM_MODULES = [
   'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-web-react',
+  '@deepseek-ai/dsh-client-store',
   '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-schema-form',
+  '@deepseek-ai/dsh-client-ui-dockkit',
 ] as const
 
 /** Externals resolved from the loader module table. */
@@ -63,7 +63,7 @@ export default [
     clean: false,
     deps: {
       neverBundle: [...CLIENT_EXTERNALS],
-      alwaysBundle: ['@deepseek-ai/dsh-session/chunk-rows'],
+      alwaysBundle: ['@deepseek-ai/dsh-llm/assistant-stream'],
     },
     define: {
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),

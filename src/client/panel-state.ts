@@ -73,7 +73,7 @@ export function revealChild(
   open = true
   if (selected === childSessionId && (mode === undefined || selectedMode === mode)) return
   selected = childSessionId
-  if (mode !== undefined) selectedMode = mode
+  selectedMode = mode
   emit()
 }
 
@@ -81,6 +81,7 @@ export function revealChild(
 export function selectChild(childSessionId: SessionId | undefined): void {
   if (selected === childSessionId) return
   selected = childSessionId
+  selectedMode = undefined
   emit()
 }
 

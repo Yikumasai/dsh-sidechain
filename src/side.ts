@@ -12,20 +12,18 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {
-  ContinuableStart,
-  ContinuableStartSpec,
-  SubagentListEntry,
-  SubagentRun,
-  SubagentStartRequest,
+  SubagentActivation,
+  SubagentActivationSpec,
+  SubagentCatalogEntry,
 } from '@deepseek-ai/dsh-subagent'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import { SIDE_BOUNDARY_PROMPT, SIDE_MODE_LINE, type SideMode } from './prompts.ts'
+import type { SidechainModes } from './sidechain-projection.ts'
 
 /** Minimal structural face of the subagent service this plugin consumes. */
 export interface SubagentsLike {
-  start(name: string, request: SubagentStartRequest): Promise<SubagentRun>
-  startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>
-  listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>
+  startActivation(spec: SubagentActivationSpec): Promise<SubagentActivation>
+  listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentCatalogEntry[]>
   getProvider(name: string): { readonly name: string } | undefined
 }
 
@@ -68,7 +66,7 @@ export function sidePrompt(
 }
 
 /**
- * Start one disposable side question (`/btw`): a one-shot fork run whose
+ * Start one side question (`/btw`): a fork activation whose
  * answer streams into the sidechain panel; the child session stays out of the
  * main history. The caller returns as soon as the run is started — nothing
  * here waits for the child to settle.
@@ -80,14 +78,20 @@ export function askSideOneShot(
   deps: SideDeps,
   signal: AbortSignal,
   attachments: readonly ContentBlock[] = [],
-): Promise<SubagentRun> {
-  return subagents.start(deps.providerName, {
+  childId?: SessionId,
+): Promise<SubagentActivation> {
+  return subagents.startActivation({
+    provider: deps.providerName,
     label: `BTW: ${truncateLabel(question)}`,
-    prompt: sidePrompt(question, 'btw', attachments),
-    parent,
+    ...(childId === undefined ? {} : { childId }),
+    request: {
+      prompt: sidePrompt(question, 'btw', attachments),
+      parent,
+      ...(deps.persona === undefined ? {} : { persona: deps.persona }),
+      ...(deps.toolFilter === undefined ? {} : { toolFilter: deps.toolFilter }),
+    },
     signal,
-    ...(deps.persona === undefined ? {} : { persona: deps.persona }),
-    ...(deps.toolFilter === undefined ? {} : { toolFilter: deps.toolFilter }),
+    delivery: 'caller',
   })
 }
 
@@ -104,9 +108,9 @@ export function startSideConversation(
   signal: AbortSignal,
   attachments: readonly ContentBlock[] = [],
   childId?: SessionId,
-): Promise<ContinuableStart> {
+): Promise<SubagentActivation> {
   const label = truncateLabel(question) || 'Side conversation'
-  return subagents.startContinuable({
+  return subagents.startActivation({
     provider: deps.providerName,
     label,
     ...(childId === undefined ? {} : { childId }),
@@ -117,6 +121,7 @@ export function startSideConversation(
       ...(deps.toolFilter === undefined ? {} : { toolFilter: deps.toolFilter }),
     },
     signal,
+    delivery: 'caller',
   })
 }
 
@@ -128,17 +133,13 @@ export function truncateLabel(text: string): string {
 }
 
 /** Render the direct-child catalog as readable lines for `/side list`. */
-export function formatSideList(entries: readonly SubagentListEntry[]): string {
+export function formatSideList(entries: readonly SubagentCatalogEntry[], modes: SidechainModes = {}): string {
   if (entries.length === 0) {
     return 'No side conversations yet. Start one with /side <question>.'
   }
   const lines = entries.map((entry) => {
-    if (entry.kind === 'diagnostic') {
-      return `- [unavailable] ${entry.id} (${entry.reason})`
-    }
-    const mode = entry.mode === 'continuable' ? 'side' : 'btw'
-    const label = entry.mode === 'continuable' ? entry.label : (entry.label ?? '(one-shot)')
-    return `- [${mode}/${entry.activity}] ${label} — ${entry.id}`
+    const mode = modes[entry.id] ?? (entry.mode === 'one-shot' ? 'btw' : entry.mode === 'continuable' ? 'side' : entry.mode)
+    return `- [${mode}] ${entry.label ?? '(one-shot)'} — ${entry.id}`
   })
   return lines.join('\n')
 }

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clampPanelWidth, closeSidechainPanel, isSidechainPanelOpen, openSidechainPanel,
   PANEL_DEFAULT_WIDTH, PANEL_MAX_WIDTH, PANEL_MIN_WIDTH, panelMaxWidth,
-  readPanelWidth, resetSidechainPanel, revealChild, selectedChildId,
+  readPanelWidth, resetSidechainPanel, revealChild, selectedChildId, selectedChildMode, selectChild,
   subscribeSidechainPanel, toggleSidechainPanel, writePanelWidth,
 } from '../src/client/panel-state'
 
@@ -55,6 +55,12 @@ describe('panel-state', () => {
     closeSidechainPanel()
     expect(isSidechainPanelOpen()).toBe(false)
     expect(selectedChildId()).toBeUndefined()
+  })
+
+  it('does not transfer BTW read-only mode when selecting another child', () => {
+    revealChild(CHILD_A, 'one-shot')
+    selectChild('22222222-2222-4222-8222-222222222222' as SessionId)
+    expect(selectedChildMode()).toBeUndefined()
   })
 
   it('reset closes, clears the selection, and drops listeners', () => {

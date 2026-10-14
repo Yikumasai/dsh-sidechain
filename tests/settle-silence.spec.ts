@@ -14,7 +14,7 @@ import { createSettlementSilence } from '../src/settle-silence'
 const SIDE = '11111111-1111-4111-8111-111111111111' as SessionId
 const OTHER = '22222222-2222-4222-8222-222222222222' as SessionId
 
-function notice(sender: string, kind: 'subagent-report' | 'subagent-settled' = 'subagent-settled'): UserMessage {
+function notice(sender: string, kind: 'agent-message' | 'subagent-report' | 'subagent-settled' = 'subagent-settled'): UserMessage {
   return {
     role: 'user',
     content: [{ type: 'text', text: 'Background subagent finished.' }],
@@ -73,11 +73,11 @@ describe('createSettlementSilence', () => {
     },
   )
 
-  it('also drops an explicit report from a recorded side child', () => {
+  it.each(['agent-message', 'subagent-report'] as const)('also drops %s from a recorded side child', (kind) => {
     const { silence } = setup()
     const parent = fakeAgent()
     silence.noteChild(parent, SIDE)
-    parent.followup(notice(SIDE, 'subagent-report'))
+    parent.followup(notice(SIDE, kind))
     expect(parent.delivered).toEqual([])
   })
 
@@ -103,6 +103,7 @@ describe('createSettlementSilence', () => {
     const resumedParent = fakeAgent()
     restarted.created.handler?.({ agent: resumedParent })
     resumedParent.followup(notice(SIDE))
+    resumedParent.steer(notice(SIDE, 'agent-message'))
     expect(resumedParent.delivered).toEqual([])
   })
 

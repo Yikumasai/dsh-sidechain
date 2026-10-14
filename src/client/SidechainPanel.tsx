@@ -15,7 +15,7 @@
  * panel-style.ts, reduced-motion safe).
  *
  * Data rides the alpha Session Controller's live subagent catalog —
- * `sessions.list` rows under `subagentsByParent` — for membership, and Session
+ * `sessions.list` rows under `projectionsBySession` — for membership, and Session
  * Remote history for conversation content (no activation, no navigation).
  * While the selected child is running, a poll reads its transcript tail (the
  * host serves the live child's in-memory snapshot) and the transcript layer
@@ -45,14 +45,16 @@ import type {
   CommandNode, ChatNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  SessionListState, SessionSummary, SubagentCatalogSnapshot,
+  SessionListState, SessionSummary, SessionProjectionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
+import type {} from '../sidechain-projection.ts'
+import type { SideMode } from '../prompts.ts'
 import {
-  DisclosureRow, IconBranchOutline16, IconBrowseOutline16, IconChevronLeftOutline14, IconCloseOutline16,
-  IconFullscreenOutline16, IconRefreshOutline14, IconRightUpOutline14, MarkdownText, StateDot,
-  IconThinkOutline14,
+  DisclosureRow, IconBranchOutlineRegular, IconBrowseOutlineRegular, IconChevronLeftOutlineRegular, IconCloseOutlineRegular,
+  IconFullscreenOutlineRegular, IconRefreshOutlineRegular, IconRightUpOutlineRegular, MarkdownText, StateDot,
+  IconThinkOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownCodeLabels, MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -82,8 +84,6 @@ export interface SidechainPanelInjected {
   sendPrompt(address: Extract<SubagentAddress, { mode: 'continuable' }>, text: string): Promise<boolean>
   /** Trigger a fresh catalog fetch for the parent session. */
   refresh(parentSessionId: SessionId): void
-  /** Arm (true) or disarm (false) the live catalog membership feed. */
-  setCatalogOpen(parentSessionId: SessionId, open: boolean): void
   /** Open an absolute path through the Session Controller. */
   openPath(path: string): void
 }
@@ -104,7 +104,8 @@ export type SidechainRow =
   | {
     kind: 'child'
     id: SessionId
-    mode: 'one-shot' | 'continuable'
+    mode: 'one-shot' | 'continuable' | 'unknown'
+    command?: SideMode
     activity: 'running' | 'inactive'
     label: string
   }
@@ -122,19 +123,19 @@ export type SidechainRow =
  * @returns flat display rows in catalog order.
  */
 export function sidechainRows(
-  catalog: SubagentCatalogSnapshot | undefined,
+  catalog: SessionProjectionSnapshot | undefined,
   summaries: Readonly<Record<SessionId, SessionSummary>>,
 ): SidechainRow[] {
   if (catalog === undefined) return []
-  return catalog.entries.map((entry): SidechainRow => {
-    if (entry.kind === 'diagnostic') {
-      return { kind: 'diagnostic', id: entry.id, reason: entry.reason }
-    }
+  return (catalog.values.subagentCatalog ?? []).map((entry): SidechainRow => {
+    if (entry.mode === 'external') return { kind: 'diagnostic', id: entry.id, reason: 'unsupported' }
+    const command = catalog.values.sidechainModes?.[entry.id]
     return {
       kind: 'child',
       id: entry.id,
       mode: entry.mode,
-      activity: entry.activity,
+      ...(command === undefined ? {} : { command }),
+      activity: summaries[entry.id]?.running === true ? 'running' : 'inactive',
       label: entry.label ?? summaries[entry.id]?.title ?? entry.id,
     }
   })
@@ -350,7 +351,8 @@ function Row({ row, activityText, t, onSelect }: {
       </div>
     )
   }
-  const mode = row.mode === 'one-shot' ? t('mode.oneShot') : t('mode.continuable')
+  const mode = row.mode === 'unknown' ? t('mode.unknown')
+    : row.mode === 'one-shot' || row.command === 'btw' ? t('mode.oneShot') : t('mode.continuable')
   const running = row.activity === 'running'
   const activity = running ? t('activity.running') : t('activity.inactive')
   return (
@@ -464,7 +466,7 @@ function TranscriptDisclosure({ row, streaming, t }: {
   const contextSource = row.kind === 'context' ? row.source : null
   return (
     <DisclosureRow
-      icon={row.kind === 'reasoning' ? <IconThinkOutline14 /> : <IconBrowseOutline16 size={14} />}
+      icon={row.kind === 'reasoning' ? <IconThinkOutlineRegular size={14} /> : <IconBrowseOutlineRegular size={14} />}
       title={row.kind === 'reasoning'
         ? t('view.reasoning')
         : t(row.recall ? 'view.contextRecall' : 'view.context')}
@@ -565,7 +567,7 @@ const ACTIVITY_POLL_INTERVAL_MS = 3000
 export function SidechainPanelToggle({ sessionId, useSessions, t }: SidechainPanelToggleProps): JSX.Element {
   const [open, setOpen] = useState(isSidechainPanelOpen)
   useEffect(() => subscribeSidechainPanel(() => { setOpen(isSidechainPanelOpen()) }), [])
-  const catalog = useSessions(state => state.subagentsByParent[sessionId])
+  const catalog = useSessions(state => state.projectionsBySession[sessionId])
   const summaries = useSessions(state => state.byId)
   const running = runningCount(sidechainRows(catalog, summaries))
   return (
@@ -577,7 +579,7 @@ export function SidechainPanelToggle({ sessionId, useSessions, t }: SidechainPan
       aria-pressed={open}
       onClick={toggleSidechainPanel}
     >
-      <IconBranchOutline16 />
+      <IconBranchOutlineRegular size={16} />
       {running > 0 && <span style={styles.badge}>{running}</span>}
     </button>
   )
@@ -590,7 +592,7 @@ export function SidechainPanelToggle({ sessionId, useSessions, t }: SidechainPan
  * open and follows the current session.
  */
 export function SidechainPanel({
-  sessionId, useChat, useSessions, readTranscript, readActivity, sendPrompt, refresh, setCatalogOpen, openPath, t,
+  sessionId, useChat, useSessions, readTranscript, readActivity, sendPrompt, refresh, openPath, t,
 }: SidechainPanelProps): JSX.Element {
   const [open, setOpen] = useState(isSidechainPanelOpen)
   const [selected, setSelected] = useState(selectedChildId)
@@ -662,7 +664,7 @@ export function SidechainPanel({
     }
   }, [commands, sessionId])
 
-  const catalogs = useSessions(state => state.subagentsByParent)
+  const catalogs = useSessions(state => state.projectionsBySession)
   const summaries = useSessions(state => state.byId)
   const catalog = catalogs[sessionId]
   const rows = useMemo(() => sidechainRows(catalog, summaries), [catalog, summaries])
@@ -673,17 +675,13 @@ export function SidechainPanel({
 
   // The injected actions can be recreated per render; keep effects pinned to
   // stable keys, reading the latest actions through a ref.
-  const actionsRef = useRef({ readTranscript, readActivity, sendPrompt, refresh, setCatalogOpen })
-  actionsRef.current = { readTranscript, readActivity, sendPrompt, refresh, setCatalogOpen }
+  const actionsRef = useRef({ readTranscript, readActivity, sendPrompt, refresh })
+  actionsRef.current = { readTranscript, readActivity, sendPrompt, refresh }
 
-  // Arm the catalog feed and refresh while open; disarm on close or when the
-  // panel moves to another session (the cleanup runs with the old session id).
   useEffect(() => {
     if (!open) return
-    const { refresh, setCatalogOpen } = actionsRef.current
-    setCatalogOpen(sessionId, true)
+    const { refresh } = actionsRef.current
     refresh(sessionId)
-    return () => { actionsRef.current.setCatalogOpen(sessionId, false) }
   }, [open, sessionId])
 
   // Keep the catalog live even if the runtime's automatic subagent events do
@@ -787,13 +785,11 @@ export function SidechainPanel({
   }, [])
 
   // The selected child's durable address (stable while selection/catalog stay).
-  // Prefer the catalog's authoritative mode; when the catalog has not yet
-  // placed the freshly-created child, fall back to the mode we learned from
-  // its `/side` or `/btw` command so the panel can stream immediately.
+  // Prefer the catalog's mode; fresh local activations are always continuable.
   const address = useMemo<SubagentAddress | undefined>(() => {
     if (selected === undefined) return undefined
     const row = rows.find(candidate => candidate.kind === 'child' && candidate.id === selected)
-    const mode = row?.kind === 'child' ? row.mode : selectedMode
+    const mode = row?.kind === 'child' ? row.mode : selectedMode === undefined ? undefined : 'continuable'
     return mode === undefined
       ? undefined
       : { parentSessionId: sessionId, childSessionId: selected, mode }
@@ -1077,7 +1073,7 @@ export function SidechainPanel({
                 title={t('view.back')}
                 onClick={() => { actionsRef.current.refresh(sessionId); selectChild(undefined) }}
               >
-                <IconChevronLeftOutline14 />
+                <IconChevronLeftOutlineRegular size={14} />
                 {t('view.back')}
               </button>
             )}
@@ -1092,7 +1088,7 @@ export function SidechainPanel({
               aria-pressed={expanded}
               onClick={toggleExpanded}
             >
-              <IconFullscreenOutline16 />
+              <IconFullscreenOutlineRegular size={16} />
             </button>
             <button
               type="button"
@@ -1107,7 +1103,7 @@ export function SidechainPanel({
                 }
               }}
             >
-              <IconRefreshOutline14 />
+              <IconRefreshOutlineRegular size={14} />
             </button>
             <button
               type="button"
@@ -1116,7 +1112,7 @@ export function SidechainPanel({
               aria-label={t('panel.close')}
               onClick={closeSidechainPanel}
             >
-              <IconCloseOutline16 />
+              <IconCloseOutlineRegular size={16} />
             </button>
           </div>
           {address === undefined ? (
@@ -1191,8 +1187,8 @@ export function SidechainPanel({
                   }}>{t('view.waiting')}</div>
                 )}
               </div>
-              {address.mode === 'one-shot' ? (
-                <div style={styles.readonly}>{t('view.readonly')}</div>
+              {address.mode !== 'continuable' || selectedChild?.command === 'btw' || selectedMode === 'one-shot' ? (
+                <div style={styles.readonly}>{t(address.mode === 'unknown' ? 'mode.unknown' : 'view.readonly')}</div>
               ) : (
                 <form
                   style={styles.composer}
@@ -1209,7 +1205,7 @@ export function SidechainPanel({
                     onChange={(event) => { setDraft(event.target.value) }}
                   />
                   <button type="submit" style={styles.sendButton} aria-label={t('composer.send')}>
-                    <IconRightUpOutline14 />
+                    <IconRightUpOutlineRegular size={14} />
                   </button>
                 </form>
               )}

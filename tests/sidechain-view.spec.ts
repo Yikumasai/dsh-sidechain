@@ -4,7 +4,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import type { SessionEventLike as SessionEvent } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import {
   blockText, fetchTranscript, mergeProduced, producedPaths, resetSeedBoundaryCache,
@@ -60,7 +60,7 @@ describe('transcriptRows', () => {
     const rows = transcriptRows(ent(
       event('tool/call', 1, { name: 'grep', arguments: '{}', callId: 'c1' }),
       event('tool/result', 2, {
-        message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [] }] },
+        message: { toolCallId: 'c1', content: [] },
         error: { name: 'E', code: 'C' },
       }),
     ))
@@ -74,7 +74,7 @@ describe('transcriptRows', () => {
     const rows = transcriptRows(ent(
       event('tool/call', 1, { name: 'edit', arguments: '{}', callId: 'c1' }),
       event('tool/result', 2, {
-        message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [], isError: true }] },
+        message: { toolCallId: 'c1', content: [], isError: true },
       }),
     ))
     expect(rows[0]).toMatchObject({ kind: 'tool', failed: true })
@@ -83,7 +83,7 @@ describe('transcriptRows', () => {
   it('keeps the error on orphan failed rows (expandable detail)', () => {
     const rows = transcriptRows(ent(
       event('tool/result', 1, {
-        message: { content: [{ type: 'tool-result', toolCallId: 'c9', content: [] }] },
+        message: { toolCallId: 'c9', content: [] },
         error: { name: 'E', code: 'C' },
       }),
     ))
@@ -100,7 +100,7 @@ describe('transcriptRows', () => {
       },
       {
         event: event('tool/result', 2, {
-          message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'src' }] }] },
+          message: { toolCallId: 'c1', content: [{ type: 'text', text: 'src' }] },
         }),
       },
     ])
@@ -143,14 +143,14 @@ describe('transcriptRows', () => {
   it('accumulates text-delta chunks into a streaming row and supersedes it with the assembled message', () => {
     const stream = transcriptRows(ent(
       event('session/end-seed', 1, {}),
-      event('assistant/chunk', 2, { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '你好' } }),
-      event('assistant/chunk', 3, { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '，世界' } }),
+      event('assistant/live-chunk', 2, { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '你好' } }),
+      event('assistant/live-chunk', 3, { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '，世界' } }),
     ))
     expect(stream).toEqual([{ kind: 'assistant', seq: 2, text: '你好，世界' }])
     const settled = transcriptRows(ent(
       event('session/end-seed', 1, {}),
-      event('assistant/chunk', 2, { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '你好' } }),
-      event('assistant/chunk', 3, { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '，世界' } }),
+      event('assistant/live-chunk', 2, { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '你好' } }),
+      event('assistant/live-chunk', 3, { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '，世界' } }),
       event('assistant/message', 4, { turn: 1, step: 1, message: { content: [{ type: 'text', text: '你好，世界！' }] } }),
     ))
     expect(settled).toEqual([{ kind: 'assistant', seq: 4, text: '你好，世界！' }])
@@ -159,9 +159,9 @@ describe('transcriptRows', () => {
   it('ignores reasoning deltas and non-text chunks', () => {
     const rows = transcriptRows(ent(
       event('session/end-seed', 1, {}),
-      event('assistant/chunk', 2, { turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: '思考中' } }),
-      event('assistant/chunk', 3, { turn: 1, step: 1, chunk: { type: 'tool-call-delta', index: 0, id: 'c1', argumentsDelta: '{}' } }),
-      event('assistant/chunk', 4, { turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' } }),
+      event('assistant/live-chunk', 2, { turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: '思考中' } }),
+      event('assistant/live-chunk', 3, { turn: 1, step: 1, chunk: { type: 'tool-call-delta', index: 0, id: 'c1', argumentsDelta: '{}' } }),
+      event('assistant/live-chunk', 4, { turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' } }),
       event('assistant/message', 5, { turn: 1, step: 1, message: { content: [{ type: 'text', text: '最终答案' }] } }),
     ))
     expect(rows).toEqual([{ kind: 'assistant', seq: 5, text: '最终答案' }])
@@ -170,7 +170,7 @@ describe('transcriptRows', () => {
   it('skips log detail events (turn brackets, usage chunks, projections)', () => {
     const rows = transcriptRows(ent(
       event('turn/start', 1, { turn: 1 }),
-      event('assistant/chunk', 2, { turn: 1, step: 1, chunk: { type: 'usage', usage: {} } }),
+      event('assistant/live-chunk', 2, { turn: 1, step: 1, chunk: { type: 'usage', usage: {} } }),
       event('turn/end', 3, { turn: 1, reason: 'stop' }),
       event('session/end-seed', 4, {}),
     ))
@@ -211,9 +211,9 @@ describe('producedPaths', () => {
       { event: event('tool/call', 1, { name: 'write', arguments: '{"file_path":"parent-only.ts"}', callId: 'p1' }) },
       { event: event('session/end-seed', 2, {}) },
       { event: event('tool/call', 3, { name: 'write', arguments: '{"file_path":"failed.ts"}', callId: 'c1' }) },
-      { event: event('tool/result', 4, { message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [] }] }, error: { name: 'E', code: 'C' } }) },
+      { event: event('tool/result', 4, { message: { toolCallId: 'c1', content: [] }, error: { name: 'E', code: 'C' } }) },
       { event: event('tool/call', 5, { name: 'write', arguments: '{"file_path":"made.ts"}', callId: 'c2' }) },
-      { event: event('tool/result', 6, { message: { content: [{ type: 'tool-result', toolCallId: 'c2', content: [] }] } }) },
+      { event: event('tool/result', 6, { message: { toolCallId: 'c2', content: [] } }) },
     ]
     expect(producedPaths(entries)).toEqual(['made.ts'])
   })
@@ -265,6 +265,7 @@ describe('fetchTranscript', () => {
     expect(sessions.follow).toHaveBeenCalledWith({
       address: { kind: 'subagent', parentSessionId: ADDRESS.parentSessionId, childSessionId: CHILD, mode: 'continuable' },
       maxMessages: 8,
+      assistantStream: true,
     })
     expect(result).toEqual({
       rows: [
@@ -275,19 +276,21 @@ describe('fetchTranscript', () => {
     })
   })
 
-  it('expands alpha packed assistant chunks before rendering', async () => {
-    const sessions = remote([snapshot([
-      record(event('session/end-seed', 1, {})),
-      {
-        type: 'chunks',
-        event: {
-          type: 'chunkrow/text-chunks', seq: 2, time: 0,
-          data: { turn: 1, step: 1, index: 0, dt: [1], texts: ['你', '好'] },
-        },
-      } as never,
+  it('replaces transient snapshot text with the committed answer without retaining stale chunks', async () => {
+    const opening = {
+      ...snapshot([record(event('session/end-seed', 1, {}))], false),
+      assistantStream: { revision: 1, activeAttempt: {
+        attemptId: 'attempt-1', startedAfterSeq: 1, turn: 1, step: 1, nextIndex: 2,
+        stream: [{ type: 'text-chunks', time0: 0, index: 0, dt: [1], texts: ['你', '好'] }],
+      } },
+    }
+    const sessions = remote([opening, snapshot([
+      record(event('assistant/message', 2, { turn: 1, step: 1, message: { content: [{ type: 'text', text: '你好，完成' }] } })),
     ], false)], [])
-    const result = await fetchTranscript(sessions as never, ADDRESS)
-    expect(result?.rows).toEqual([{ kind: 'assistant', seq: 2, text: '你好' }])
+    const streaming = await fetchTranscript(sessions as never, ADDRESS)
+    expect(streaming?.rows.map(row => 'text' in row ? row.text : '')).toEqual(['你好'])
+    const settled = await fetchTranscript(sessions as never, ADDRESS)
+    expect(settled?.rows.map(row => 'text' in row ? row.text : '')).toEqual(['你好，完成'])
   })
 
   it('walks backward to the seed boundary and cuts the inherited fork seed', async () => {

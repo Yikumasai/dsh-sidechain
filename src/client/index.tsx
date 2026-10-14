@@ -69,10 +69,7 @@ export function apply(ctx: Context): void {
       return sendPrompt(subagents, address, text)
     },
     refresh(parentSessionId: SessionId): void {
-      void sessions.refreshSubagents(parentSessionId)
-    },
-    setCatalogOpen(parentSessionId: SessionId, open: boolean): void {
-      sessions.setSubagentCatalogOpen(parentSessionId, open)
+      void sessions.refreshProjections(parentSessionId)
     },
     openPath(path: string): void {
       // Mirror the main chat's openFile: host open failures stay silent.

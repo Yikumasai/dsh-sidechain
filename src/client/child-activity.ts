@@ -1,4 +1,4 @@
-import type { SubagentCatalogSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionProjectionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 
 /**
  * Resolved activity of one side-conversation child. A tri-state, not a boolean:
@@ -12,7 +12,7 @@ import type { SubagentCatalogSnapshot } from '@deepseek-ai/dsh-api-session-contr
 export type ChildActivity = 'unknown' | 'running' | 'inactive'
 
 /** Snapshot state of the parent session's subagent catalog, if any. */
-export type CatalogState = SubagentCatalogSnapshot['state'] | 'absent'
+export type CatalogState = SessionProjectionSnapshot['state'] | 'absent'
 
 /** Single catalog entry's reported activity, when the child is in the catalog. */
 export type CatalogActivity = 'running' | 'inactive'

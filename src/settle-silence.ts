@@ -1,6 +1,6 @@
 /**
  * Stop side-conversation reports and settlement notices before they enter the
- * parent inbox. Continuable children can deliver both `subagent-report` and
+ * parent inbox. Continuable children can deliver both `agent-message` and
  * `subagent-settled` messages through `followup`, `steer`, or `inject`; even
  * filtering later at pre-step leaves inbox and empty-turn events in the main
  * Session log.
@@ -67,7 +67,7 @@ interface SettlementSource {
 
 function isSideChildDelivery(message: UserMessage, children: ReadonlySet<SessionId>): boolean {
   const source = message.source as SettlementSource | undefined
-  return (source?.kind === 'subagent-report' || source?.kind === 'subagent-settled')
+  return (source?.kind === 'agent-message' || source?.kind === 'subagent-report' || source?.kind === 'subagent-settled')
     && source.senderSessionId !== undefined
     && children.has(source.senderSessionId as SessionId)
 }
@@ -99,7 +99,7 @@ export function createSettlementSilence(ctx: Context): SettlementSilence {
 
   // Protect live parents on hot load and future parents after a cold restart.
   for (const agent of ctx.agents.list()) protect(agent)
-  const removeCreatedListener = ctx.on('agent/created', ({ agent }) => { protect(agent) })
+  const removeCreatedListener = ctx.on('agent/created', ({ agent }) => { protect(agent); return undefined })
 
   return {
     reserveChild(parent): SessionId {

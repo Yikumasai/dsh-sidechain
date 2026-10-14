@@ -2,7 +2,7 @@
 
 DSH 侧会话插件。它通过 fork 当前会话创建隔离子会话，让用户在不中断主线程的情况下发起一次性问题或持续对话。
 
-当前分支适配 DSH `0.1.2-alpha.2`，依赖已发布到 npm。
+当前分支适配 DSH `0.2.1-alpha.2`，依赖已发布到 npm。插件版本为 `0.8.0-alpha.2`；旧版 DSH 不在此分支的兼容范围内。
 
 | 命令 | 用途 |
 |---|---|
@@ -23,9 +23,17 @@ DSH 侧会话插件。它通过 fork 当前会话创建隔离子会话，让用�
 
 ## 安装与卸载
 
-依赖 DSH 提供的 `@deepseek-ai/dsh-subagent`、`@deepseek-ai/dsh-subagent-fork-in-process` 和 `@deepseek-ai/dsh-commands`。默认 Web profile 已包含这些依赖。
+依赖 DSH 提供的 `@deepseek-ai/dsh-subagent`、`@deepseek-ai/dsh-subagent-fork-in-process`、`@deepseek-ai/dsh-session-projection` 和 `@deepseek-ai/dsh-commands`。默认 Web profile 已包含这些依赖。
 
 ### 安装
+
+本次适配在当前工作分支，尚未发布。测试本地源码时，先运行 `pnpm install` 和 `pnpm build`，再用 **0.2.1-alpha.2** 的 CLI 安装本仓库的绝对路径：
+
+```sh
+dsh plugin --profile web add /absolute/path/to/dsh-sidechain
+```
+
+适配合入并发布后，才可通过默认 GitHub 分支获取本版本：
 
 ```sh
 dsh plugin --profile web add github:omdsh-dev/dsh-sidechain
@@ -81,7 +89,7 @@ dsh plugin --profile web remove @dsh-external/dsh-sidechain
 /btw 这个目录下哪个文件最大？
 ```
 
-命令立即返回，侧链面板自动打开并显示执行过程和答案。`/btw` 只运行一轮，不能继续追问。
+命令立即返回，侧链面板自动打开并显示执行过程和答案。`/btw` 在插件中作为一次性问题展示，侧链面板不提供追问输入框。
 
 持续侧会话：
 
@@ -123,7 +131,7 @@ fork 只继承父会话已经完成的回合。继承内容仅作为参考，bou
 ## 限制
 
 - fork 不包含父会话正在进行的回合。
-- `/btw` 只运行一轮；需要继续追问时使用 `/side`。
+- DSH `0.2.1-alpha.2` 将新建本地子会话统一存为 `continuable`。本插件从父会话已有命令结果投影出 `/btw` 身份，重启后仍保持侧栏只读；这不是宿主层的不可续聊权限，DSH 原生子代理入口或其他调用方仍可能续聊。需要正常追问时使用 `/side`。
 - `/side list` 和侧栏列出当前会话的全部直接子代理，不限于本插件创建的线程。
 - `/side` 必须带首个问题；当前 subagent API 不支持创建后等待首次输入的空线程。
 
@@ -134,4 +142,8 @@ pnpm install
 pnpm check
 ```
 
-`pnpm check` 依次执行类型检查、测试和构建。依赖固定到 DSH `0.1.2-alpha.2`，可直接从 npm registry 安装。
+`pnpm check` 依次执行类型检查、测试和构建。依赖固定到 DSH `0.2.1-alpha.2`，可直接从 npm registry 安装。
+
+浏览器适配使用 `ctx.remote`、Session Controller 的 `projectionsBySession` 和 `assistantStream` 开场快照。`sidechainModes` 投影只从已有 `command/done` 记录推导命令身份，不根据可变标题猜测类型，也不另存一份身份记录。首次启动使用 `delivery: 'caller'`，持久化的父收件箱过滤继续保护冷启动后的续聊。
+
+本次验证记录与四个开放 issue 的后续方案见 [DSH 0.2.1 适配记录](docs/dsh-0.2.1-compatibility.md)。

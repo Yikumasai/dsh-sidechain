@@ -9,6 +9,7 @@
 import type { CommandNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { sideCommandResult } from '../command-result.ts'
 
 /** Props supplied by the keyed command row. */
 export interface SideCommandCardProps {
@@ -31,10 +32,8 @@ const MARKDOWN_LABELS = {
  * `BTW question started: <uuid>.`.
  */
 export function resolveChildSessionId(node: CommandNode, kind: SideCommandKind): SessionId | undefined {
-  const text = node.outcome?.kind === 'success' ? node.outcome.text : undefined
-  if (text === undefined) return undefined
-  const pattern = kind === 'side' ? /Side conversation started: ([0-9a-f-]{36})/ : /BTW question started: ([0-9a-f-]{36})/
-  return pattern.exec(text)?.[1] as SessionId | undefined
+  const created = sideCommandResult(node.outcome)
+  return created?.mode === kind ? created.childId : undefined
 }
 
 /** Last resolved child id for each observed sidechain command. */

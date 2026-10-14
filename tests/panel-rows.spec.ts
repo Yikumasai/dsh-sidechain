@@ -3,17 +3,21 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { SubagentCatalogSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionProjectionSnapshot, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SubagentCatalog } from '@deepseek-ai/dsh-subagent/client'
+import type { SubagentCatalogEntry } from '@deepseek-ai/dsh-subagent/client'
 import { runningCount, sidechainRows } from '../src/client/SidechainPanel'
 
 const PARENT = 'parent-1' as SessionId
 const CHILD_A = '11111111-1111-4111-8111-111111111111' as SessionId
 const CHILD_B = '22222222-2222-4222-8222-222222222222' as SessionId
 
-function snapshot(entries: SubagentCatalog['entries']): SubagentCatalogSnapshot & SubagentCatalog {
-  return { entries, parentAvailable: true, state: 'ready', error: null }
+function snapshot(entries: SubagentCatalogEntry[]): SessionProjectionSnapshot {
+  return { values: { subagentCatalog: entries }, state: 'ready', error: null }
+}
+
+function summary(id: SessionId, running: boolean, title?: string): SessionSummary {
+  return { id, running, displayTitle: title ?? id, blank: false, updatedAt: 0, retainedBy: {}, ...(title === undefined ? {} : { title }) }
 }
 
 describe('sidechainRows', () => {
@@ -23,12 +27,11 @@ describe('sidechainRows', () => {
 
   it('resolves child labels: entry label, then summary title, then id', () => {
     const rows = sidechainRows(snapshot([
-      { kind: 'child', id: CHILD_A, activity: 'running', hasChildren: false, mode: 'continuable', label: '调研 X' },
-      { kind: 'child', id: CHILD_B, activity: 'inactive', hasChildren: false, mode: 'one-shot' },
+      { id: CHILD_A, createdAt: 0, mode: 'continuable', label: '调研 X' },
+      { id: CHILD_B, createdAt: 0, mode: 'one-shot' },
     ]), {
-      [CHILD_B]: {
-        id: CHILD_B, title: '问答标题', displayTitle: '问答标题', running: false, blank: false, updatedAt: 0,
-      },
+      [CHILD_A]: summary(CHILD_A, true),
+      [CHILD_B]: summary(CHILD_B, false, '问答标题'),
     })
     expect(rows).toEqual([
       { kind: 'child', id: CHILD_A, mode: 'continuable', activity: 'running', label: '调研 X' },
@@ -38,26 +41,38 @@ describe('sidechainRows', () => {
 
   it('falls back to the session id without any title source', () => {
     const rows = sidechainRows(snapshot([
-      { kind: 'child', id: CHILD_A, activity: 'inactive', hasChildren: false, mode: 'one-shot' },
+      { id: CHILD_A, createdAt: 0, mode: 'one-shot' },
     ]), {})
     expect(rows[0]).toEqual({ kind: 'child', id: CHILD_A, mode: 'one-shot', activity: 'inactive', label: CHILD_A })
   })
 
-  it('passes diagnostics through', () => {
+  it('uses command identity rather than an editable title for BTW presentation', () => {
+    const catalog = snapshot([
+      { id: CHILD_A, createdAt: 0, mode: 'continuable', label: 'renamed question' },
+      { id: CHILD_B, createdAt: 0, mode: 'continuable', label: 'BTW: a normal side thread' },
+    ])
+    const rows = sidechainRows({
+      ...catalog, values: { ...catalog.values, sidechainModes: { [CHILD_A]: 'btw', [CHILD_B]: 'side' } },
+    }, {})
+    expect(rows[0]).toMatchObject({ mode: 'continuable', command: 'btw' })
+    expect(rows[1]).toMatchObject({ mode: 'continuable', command: 'side' })
+  })
+
+  it('does not offer local history for external executions', () => {
     const rows = sidechainRows(snapshot([
-      { kind: 'diagnostic', id: CHILD_A, reason: 'corrupt' },
+      { id: CHILD_A, createdAt: 0, mode: 'external' },
     ]), {})
-    expect(rows).toEqual([{ kind: 'diagnostic', id: CHILD_A, reason: 'corrupt' }])
+    expect(rows).toEqual([{ kind: 'diagnostic', id: CHILD_A, reason: 'unsupported' }])
   })
 })
 
 describe('runningCount', () => {
   it('counts only running child rows', () => {
     const rows = sidechainRows(snapshot([
-      { kind: 'child', id: CHILD_A, activity: 'running', hasChildren: false, mode: 'continuable', label: 'a' },
-      { kind: 'child', id: CHILD_B, activity: 'inactive', hasChildren: false, mode: 'one-shot' },
-      { kind: 'diagnostic', id: PARENT, reason: 'unavailable' },
-    ]), {})
+      { id: CHILD_A, createdAt: 0, mode: 'continuable', label: 'a' },
+      { id: CHILD_B, createdAt: 0, mode: 'one-shot' },
+      { id: PARENT, createdAt: 0, mode: 'external' },
+    ]), { [CHILD_A]: summary(CHILD_A, true) })
     expect(runningCount(rows)).toBe(1)
   })
 })

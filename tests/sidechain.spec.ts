@@ -12,10 +12,9 @@ import type { CommandDefinition, CommandId, CommandInvocation } from '@deepseek-
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {
-  ContinuableStart,
-  ContinuableStartSpec,
-  SubagentListEntry,
-  SubagentRun,
+  SubagentActivation,
+  SubagentActivationSpec,
+  SubagentCatalogEntry,
   SubagentStartRequest,
 } from '@deepseek-ai/dsh-subagent'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
@@ -50,8 +49,7 @@ afterEach(() => {
 
 interface Harness {
   subagents: SubagentsLike & {
-    start: ReturnType<typeof vi.fn>
-    startContinuable: ReturnType<typeof vi.fn>
+    startActivation: ReturnType<typeof vi.fn>
     listChildren: ReturnType<typeof vi.fn>
     getProvider: ReturnType<typeof vi.fn>
   }
@@ -62,8 +60,7 @@ interface Harness {
 
 function makeHarness(deps: SideDeps = DEFAULT_DEPS): Harness {
   const subagents = {
-    start: vi.fn(),
-    startContinuable: vi.fn(),
+    startActivation: vi.fn(),
     listChildren: vi.fn(),
     getProvider: vi.fn(() => ({ name: deps.providerName })),
   } as unknown as Harness['subagents']
@@ -87,32 +84,30 @@ function textOf(block: ContentBlock): string {
 }
 
 /** A minimal started run; by default its result never settles (still running). */
-function runOf(result: Promise<unknown> = new Promise<never>(() => {})): SubagentRun {
+function runOf(result: Promise<unknown> = new Promise<never>(() => {})): SubagentActivation {
   return {
-    id: CHILD_ID,
+    childId: CHILD_ID,
     local: true,
     stopReason: 'completed',
     lastAssistantMessage: [],
     result,
     dispose: vi.fn().mockResolvedValue(undefined),
-  } as unknown as SubagentRun
+  } as unknown as SubagentActivation
 }
 
-type ChildEntry = Extract<SubagentListEntry, { kind: 'child' }>
+type ChildEntry = SubagentCatalogEntry
 
-function childEntry(partial: Partial<ChildEntry> = {}): SubagentListEntry {
+function childEntry(partial: Partial<ChildEntry> = {}): SubagentCatalogEntry {
   const mode = partial.mode ?? 'continuable'
   const label = (partial as { label?: string }).label
   return {
-    kind: 'child',
     id: partial.id ?? CHILD_ID,
-    activity: partial.activity ?? 'inactive',
-    hasChildren: partial.hasChildren ?? false,
+    createdAt: 0,
     mode,
     ...(mode === 'continuable'
       ? { label: label ?? 'Side conversation' }
       : label === undefined ? {} : { label }),
-  } as SubagentListEntry
+  } as SubagentCatalogEntry
 }
 
 describe('pinned prompt text', () => {
@@ -139,8 +134,8 @@ describe('pinned prompt text', () => {
 describe('command registration', () => {
   it('declares argument hints and keeps both questions out of the parent log', () => {
     const { commands } = makeHarness()
-    expect(commands[0]?.input).toEqual({ hint: '<question>', images: true })
-    expect(commands[1]?.input).toEqual({ hint: '<question>', images: true })
+    expect(commands[0]?.input).toEqual({ hint: '<question>', attachments: true })
+    expect(commands[1]?.input).toEqual({ hint: '<question>', attachments: true })
     expect(commands[0]?.recordInput).toBe(false)
     expect(commands[1]?.recordInput).toBe(false)
   })
@@ -150,18 +145,20 @@ describe('command registration', () => {
 describe('/btw (non-blocking one-shot side question)', () => {
   it('starts a one-shot run with boundary + question and returns the child id', async () => {
     const { subagents, commands, noteChild } = makeHarness()
-    subagents.start.mockResolvedValue(runOf())
+    subagents.startActivation.mockResolvedValue(runOf())
 
     const result = await invoke(commands[1]!, '  what is 6*7?  ')
 
     expect(result).toEqual({ kind: 'success', text: `BTW question started: ${String(CHILD_ID)}.` })
-    expect(subagents.start).toHaveBeenCalledTimes(1)
-    expect(subagents.start).toHaveBeenCalledWith('fork', expect.objectContaining({
+    expect(subagents.startActivation).toHaveBeenCalledTimes(1)
+    expect(subagents.startActivation).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'fork',
       label: 'BTW: what is 6*7?',
-      parent: agent,
-      persona: SIDE_PERSONA,
+      childId: CHILD_ID,
+      delivery: 'caller',
+      request: expect.objectContaining({ parent: agent, persona: SIDE_PERSONA }),
     }))
-    const request = subagents.start.mock.calls[0]![1] as SubagentStartRequest
+    const request = subagents.startActivation.mock.calls[0]![0].request as SubagentStartRequest
     const prompt = textOf(request.prompt[0]!)
     expect(prompt).toContain(SIDE_MODE_LINE.btw)
     expect(prompt).toContain(SIDE_BOUNDARY_PROMPT)
@@ -171,7 +168,7 @@ describe('/btw (non-blocking one-shot side question)', () => {
 
   it('forwards admitted image blocks into the child prompt', async () => {
     const { subagents, commands } = makeHarness()
-    subagents.start.mockResolvedValue(runOf())
+    subagents.startActivation.mockResolvedValue(runOf())
     const image = {
       type: 'image',
       attachment: {
@@ -181,7 +178,7 @@ describe('/btw (non-blocking one-shot side question)', () => {
 
     await invoke(commands[1]!, 'describe this', new AbortController().signal, [image])
 
-    const request = subagents.start.mock.calls[0]![1] as SubagentStartRequest
+    const request = subagents.startActivation.mock.calls[0]![0].request as SubagentStartRequest
     expect(request.prompt).toEqual(expect.arrayContaining([image]))
   })
 
@@ -189,7 +186,7 @@ describe('/btw (non-blocking one-shot side question)', () => {
     const { subagents, commands } = makeHarness()
     // A never-settling result: the handler still returns immediately.
     const run = runOf()
-    subagents.start.mockResolvedValue(run)
+    subagents.startActivation.mockResolvedValue(run)
 
     const result = await invoke(commands[1]!, 'question')
 
@@ -203,7 +200,7 @@ describe('/btw (non-blocking one-shot side question)', () => {
   it('disposes the run once its result settles (release contract)', async () => {
     const { subagents, commands } = makeHarness()
     const run = runOf(Promise.resolve({ output: [], structured: undefined, stopReason: 'completed' }))
-    subagents.start.mockResolvedValue(run)
+    subagents.startActivation.mockResolvedValue(run)
 
     const result = await invoke(commands[1]!, 'question')
     expect(result.kind).toBe('success')
@@ -216,7 +213,7 @@ describe('/btw (non-blocking one-shot side question)', () => {
   it('disposes even when the child run fails', async () => {
     const { subagents, commands } = makeHarness()
     const run = runOf(Promise.reject(new Error('child crash')))
-    subagents.start.mockResolvedValue(run)
+    subagents.startActivation.mockResolvedValue(run)
 
     await invoke(commands[1]!, 'question')
 
@@ -229,7 +226,7 @@ describe('/btw (non-blocking one-shot side question)', () => {
     const result = await invoke(commands[1]!, '   ')
 
     expect(result).toEqual({ kind: 'error', text: '/btw requires a question: /btw <question>' })
-    expect(subagents.start).not.toHaveBeenCalled()
+    expect(subagents.startActivation).not.toHaveBeenCalled()
   })
 
   it('fails loud with a mount hint when the provider is missing', async () => {
@@ -241,12 +238,12 @@ describe('/btw (non-blocking one-shot side question)', () => {
     expect(result.kind).toBe('error')
     expect(result.kind === 'error' && result.text).toContain('provider "fork" is not registered')
     expect(result.kind === 'error' && result.text).toContain('@deepseek-ai/dsh-subagent-fork-in-process')
-    expect(subagents.start).not.toHaveBeenCalled()
+    expect(subagents.startActivation).not.toHaveBeenCalled()
   })
 
   it('returns an error result when starting the child fails', async () => {
     const { subagents, commands } = makeHarness()
-    subagents.start.mockRejectedValue(new Error('boom'))
+    subagents.startActivation.mockRejectedValue(new Error('boom'))
 
     const result = await invoke(commands[1]!, 'question')
 
@@ -260,17 +257,17 @@ describe('/side (continuable side thread)', () => {
     const { subagents, commands, noteChild, reserveChild } = makeHarness()
     const order: string[] = []
     reserveChild.mockImplementation(() => { order.push('reserve'); return CHILD_ID })
-    subagents.startContinuable.mockImplementation(async (spec: ContinuableStartSpec) => {
+    subagents.startActivation.mockImplementation(async (spec: SubagentActivationSpec) => {
       order.push('start')
-      return { childId: spec.childId, messageId: 'm1' } as ContinuableStart
+      return { childId: spec.childId, messageId: 'm1' } as SubagentActivation
     })
 
     const result = await invoke(commands[0]!, '  investigate the plugin seams  ')
 
     expect(result).toEqual({ kind: 'success', text: `Side conversation started: ${String(CHILD_ID)}.` })
     expect(order).toEqual(['reserve', 'start'])
-    expect(subagents.startContinuable).toHaveBeenCalledTimes(1)
-    const spec = subagents.startContinuable.mock.calls[0]![0] as ContinuableStartSpec
+    expect(subagents.startActivation).toHaveBeenCalledTimes(1)
+    const spec = subagents.startActivation.mock.calls[0]![0] as SubagentActivationSpec
     expect(spec.childId).toBe(CHILD_ID)
     expect(spec.provider).toBe('fork')
     expect(spec.label).toBe('investigate the plugin seams')
@@ -286,9 +283,8 @@ describe('/side (continuable side thread)', () => {
   it('lists children of the current session through /side list', async () => {
     const { subagents, commands } = makeHarness()
     subagents.listChildren.mockResolvedValue([
-      childEntry({ activity: 'running', label: 'seams research' }),
+      childEntry({ label: 'seams research' }),
       childEntry({ mode: 'one-shot', label: 'BTW: quick check' }),
-      { kind: 'diagnostic', id: 'child-3' as SessionId, reason: 'corrupt' },
     ])
 
     const result = await invoke(commands[0]!, 'list')
@@ -296,9 +292,8 @@ describe('/side (continuable side thread)', () => {
     expect(subagents.listChildren).toHaveBeenCalledWith(PARENT_ID, expect.any(AbortSignal))
     expect(result.kind).toBe('success')
     const text = result.kind === 'success' ? result.text : ''
-    expect(text).toContain('[side/running] seams research')
-    expect(text).toContain('[btw/inactive] BTW: quick check')
-    expect(text).toContain('[unavailable] child-3 (corrupt)')
+    expect(text).toContain('[side] seams research')
+    expect(text).toContain('[btw] BTW: quick check')
   })
 
   it('reports an empty catalog', async () => {
@@ -324,8 +319,8 @@ describe('text helpers', () => {
       childEntry({ mode: 'one-shot' }),
       childEntry({ mode: 'continuable', label: 'named side' }),
     ])
-    expect(text).toContain('[btw/inactive] (one-shot)')
-    expect(text).toContain('[side/inactive] named side')
+    expect(text).toContain('[btw] (one-shot)')
+    expect(text).toContain('[side] named side')
   })
 })
 
@@ -334,6 +329,7 @@ describe('plugin wiring', () => {
     const registered: CommandDefinition[] = []
     const fakeCtx = {
       subagents: makeHarness().subagents,
+      sessionProjections: { register: vi.fn() },
       agents: { list: () => [] },
       on: vi.fn(() => () => {}),
       inject: (_deps: string[], callback: (inner: { commands: { register: (d: CommandDefinition) => void } }) => void) => {
@@ -350,6 +346,7 @@ describe('plugin wiring', () => {
     const registered: CommandDefinition[] = []
     const fakeCtx = {
       subagents: harness.subagents,
+      sessionProjections: { register: vi.fn() },
       agents: { list: () => [] },
       on: vi.fn(() => () => {}),
       inject: (_deps: string[], callback: (inner: { commands: { register: (d: CommandDefinition) => void } }) => void) => {
@@ -363,10 +360,10 @@ describe('plugin wiring', () => {
     })
 
     const run = runOf()
-    harness.subagents.start.mockResolvedValue(run)
+    harness.subagents.startActivation.mockResolvedValue(run)
     await invoke(registered[1]!, 'question')
 
-    const request = harness.subagents.start.mock.calls[0]![1] as SubagentStartRequest
+    const request = harness.subagents.startActivation.mock.calls[0]![0].request as SubagentStartRequest
     expect(request.toolFilter).toEqual({ allow: ['read', 'grep'] } satisfies ToolRestriction)
   })
 })

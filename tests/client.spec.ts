@@ -113,7 +113,6 @@ describe('client apply wiring', () => {
         readActivity?: (address: unknown) => Promise<unknown>
         sendPrompt?: (address: unknown, text: string) => Promise<boolean>
         refresh?: (parentSessionId: string) => void
-        setCatalogOpen?: (parentSessionId: string, open: boolean) => void
         openPath?: (path: string) => void
       }
     }
@@ -125,8 +124,7 @@ describe('client apply wiring', () => {
 
   function fakeCtx() {
     const registered: RegisteredSlot[] = []
-    const refreshSubagents = vi.fn(() => Promise.resolve())
-    const setSubagentCatalogOpen = vi.fn()
+    const refreshProjections = vi.fn(() => Promise.resolve())
     const registerLocale = vi.fn()
     const follow = vi.fn(async function* () {
       yield { type: 'snapshot' as const, cursor: 0, records: [], hasMore: false, header: {}, projections: {} }
@@ -138,7 +136,7 @@ describe('client apply wiring', () => {
       subagents: { prompt },
     }
     const ctx = {
-      sessions: { refreshSubagents, setSubagentCatalogOpen, binding: vi.fn(() => undefined) },
+      sessions: { refreshProjections },
       locale: { register: registerLocale },
       effect: (fn: () => void) => { fn() },
       remote,
@@ -154,7 +152,7 @@ describe('client apply wiring', () => {
         },
       },
     }
-    return { ctx, registered, follow, page, prompt, refreshSubagents, setSubagentCatalogOpen }
+    return { ctx, registered, follow, page, prompt, refreshProjections }
   }
 
   it('registers keyed cards, an always-mounted panel host, and the header toggle', () => {
@@ -170,7 +168,7 @@ describe('client apply wiring', () => {
   })
 
   it('panel inject wires the transcript RPC and catalog methods', async () => {
-    const { ctx, registered, follow, prompt, refreshSubagents, setSubagentCatalogOpen } = fakeCtx()
+    const { ctx, registered, follow, prompt, refreshProjections } = fakeCtx()
     apply(ctx as never)
     const entry = registered.find(item => item.options.id === 'sidechain-panel-host')!
     const injected = entry.options.inject!('parent-1')
@@ -179,6 +177,7 @@ describe('client apply wiring', () => {
     expect(follow).toHaveBeenCalledWith({
       address: { kind: 'subagent', parentSessionId: 'parent-1', childSessionId: CHILD_ID, mode: 'continuable' },
       maxMessages: 8,
+      assistantStream: true,
     })
     expect(transcript).toEqual({ rows: [], produced: [] })
     // The activity line reads a lighter tail page; an empty log yields null.
@@ -186,6 +185,7 @@ describe('client apply wiring', () => {
     expect(follow).toHaveBeenCalledWith({
       address: { kind: 'subagent', parentSessionId: 'parent-1', childSessionId: CHILD_ID, mode: 'continuable' },
       maxMessages: 6,
+      assistantStream: true,
     })
     expect(activityLine).toBeNull()
     const accepted = await injected.sendPrompt!(address, '继续')
@@ -194,8 +194,6 @@ describe('client apply wiring', () => {
     }))
     expect(accepted).toBe(true)
     injected.refresh!('parent-1')
-    expect(refreshSubagents).toHaveBeenCalledWith('parent-1')
-    injected.setCatalogOpen!('parent-1', true)
-    expect(setSubagentCatalogOpen).toHaveBeenCalledWith('parent-1', true)
+    expect(refreshProjections).toHaveBeenCalledWith('parent-1')
   })
 })
