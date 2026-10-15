@@ -2,7 +2,7 @@
 
 DSH 侧会话插件。它通过 fork 当前会话创建隔离子会话，让用户在不中断主线程的情况下发起一次性问题或持续对话。
 
-当前分支适配 DSH `0.2.1-alpha.2`，依赖已发布到 npm。插件版本为 `0.8.0-alpha.2`；旧版 DSH 不在此分支的兼容范围内。
+当前 Sidechain 与所适配的 DSH 版本均为 `0.2.1-alpha.2`，依赖已发布到 npm。Sidechain 的版本号始终与目标 DSH 完全一致，包括预发布后缀；旧版 DSH 不在此版本的兼容范围内。
 
 | 命令 | 用途 |
 |---|---|
@@ -27,16 +27,16 @@ DSH 侧会话插件。它通过 fork 当前会话创建隔离子会话，让用�
 
 ### 安装
 
-本次适配在当前工作分支，尚未发布。测试本地源码时，先运行 `pnpm install` 和 `pnpm build`，再用 **0.2.1-alpha.2** 的 CLI 安装本仓库的绝对路径：
-
-```sh
-dsh plugin --profile web add /absolute/path/to/dsh-sidechain
-```
-
-适配合入并发布后，才可通过默认 GitHub 分支获取本版本：
+默认 `master` 分支已包含本次适配。使用 **0.2.1-alpha.2** 的 CLI 安装或更新：
 
 ```sh
 dsh plugin --profile web add github:omdsh-dev/dsh-sidechain
+```
+
+安装后重启 DSH Web，并强制刷新浏览器。测试本地源码时，先运行 `pnpm install` 和 `pnpm build`，再安装本仓库的绝对路径：
+
+```sh
+dsh plugin --profile web add /absolute/path/to/dsh-sidechain
 ```
 
 pnpm 10 及以上首次安装会提示允许 Git 依赖执行 `prepare`。按命令输出把插件键加入 Web profile 的 `pnpm-workspace.yaml`，然后重新执行安装命令。
@@ -144,6 +144,8 @@ pnpm check
 
 `pnpm check` 依次执行类型检查、测试和构建。依赖固定到 DSH `0.2.1-alpha.2`，可直接从 npm registry 安装。
 
+版本以 `dsh.plugin.json` 的 `engines.dsh` 为准；每次适配 DSH 时，同步 `package.json` 和插件清单的 `version`，不再独立递增 Sidechain 版本。构建时校验三者一致，避免安装版本与兼容声明分叉。
+
 浏览器适配使用 `ctx.remote`、Session Controller 的 `projectionsBySession` 和 `assistantStream` 开场快照。`sidechainModes` 投影只从已有 `command/done` 记录推导命令身份，不根据可变标题猜测类型，也不另存一份身份记录。首次启动使用 `delivery: 'caller'`，持久化的父收件箱过滤继续保护冷启动后的续聊。
 
-本次验证记录与四个开放 issue 的后续方案见 [DSH 0.2.1 适配记录](docs/dsh-0.2.1-compatibility.md)。
+本次验证记录与四个 issue 的处理结论见 [DSH 0.2.1 适配记录](docs/dsh-0.2.1-compatibility.md)。

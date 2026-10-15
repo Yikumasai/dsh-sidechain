@@ -1,7 +1,7 @@
 {
   "name": "@dsh-external/dsh-sidechain",
   "description": "DSH side-conversation plugin: /side and /btw start isolated forked child sessions (Codex /side & /btw semantics).",
-  "version": "0.8.0-alpha.2",
+  "version": "0.2.1-alpha.2",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

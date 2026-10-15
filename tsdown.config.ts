@@ -7,7 +7,14 @@
  * loader seeds) and
  * bundles everything else inline.
  */
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import type { UserConfig } from 'tsdown'
+
+const packageManifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+const pluginManifest = JSON.parse(readFileSync(new URL('./dsh.plugin.json', import.meta.url), 'utf8'))
+assert.equal(packageManifest.version, pluginManifest.engines.dsh, 'Sidechain version must match its supported DSH version')
+assert.equal(pluginManifest.version, packageManifest.version, 'Plugin and package versions must match')
 
 const PLUGIN_ID = '@dsh-external/dsh-sidechain'
 

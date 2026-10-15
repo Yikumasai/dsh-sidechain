@@ -2,12 +2,12 @@
 
 ## 基线与完成范围
 
-- Sidechain：本地工作分支，插件 `0.8.0-alpha.2`，未发布。
+- Sidechain：默认 `master` 分支，版本 `0.2.1-alpha.2`，与所适配的 DSH 一致。
 - DSH：源码 `d743267388641bc76f17c45ce8b4c231aed1d32c`，版本 `0.2.1-alpha.2`。
 - 本机 PATH 中的 `dsh` 仍报告 `0.2.0-rc.2`；验证使用新版源码 CLI 启动的独立 Web 实例。
 - `pnpm check` 通过：两个类型检查、122 项测试及 Host/Client 构建。
 
-本次完成新版本接口适配，不实现未闭合回合继承或缓存策略改造。现有用户的 DSH home、配置和会话未用于实验，也未写入 GitHub issue 或发布插件。
+本次完成新版本接口适配，不实现未闭合回合继承或缓存策略改造。现有用户的 DSH home、配置和会话未用于实验。适配已推送至默认分支，GitHub #9 与 #8 已附验证说明并关闭；#8 按默认 Flash 模型范围验收。尚未创建 release 或发布 npm 包。
 
 ## 关键适配
 
@@ -45,13 +45,13 @@
 
 浏览器无未捕获 JS 异常或插件模块错误；仍有宿主 `/open-in-app/icon/filemanager` 的 HTTP 404。真实模型的父首轮发生一次 `TRANSPORT` 错误，宿主自动重试后成功；后续子会话请求均成功。未测试长上下文缓存对照实验、旧版会话迁移、桌面 Electron 以及图片/文件附件的完整交互。
 
-## 四个开放 issue
+## 四个 issue 的处理结论
 
 | Issue | 最新版本结论 | 建议 |
 | --- | --- | --- |
-| [#9 模块表与 connection.api](https://github.com/omdsh-dev/dsh-sidechain/issues/9) | 当前分支已使用 `ctx.remote`；本次真实浏览器验证了加载、历史和发送，不只是面板挂载 | 本次适配发布后可提供复测版本；不宣称旧版 DSH 也兼容 |
+| [#9 模块表与 connection.api](https://github.com/omdsh-dev/dsh-sidechain/issues/9) | 已关闭；当前版本使用 `ctx.remote`，真实浏览器验证了加载、历史和发送 | 升级 DSH 与默认分支 Sidechain 至配套版本；不宣称旧版 DSH 也兼容 |
 | [#3 完成后历史读取失败](https://github.com/omdsh-dev/dsh-sidechain/issues/3) | 当前源码、当前格式的新会话，在插件和原生入口都未复现；冷恢复验证通过 | 保留旧版问题的证据边界，不把新会话通过当作旧数据已修复 |
-| [#8 persona 破坏缓存前缀](https://github.com/omdsh-dev/dsh-sidechain/issues/8) | 当前默认 `deepseek-flash` 支持宿主追加 system 更新；保留默认 persona 的 `/btw`、`/side` 首次请求均实际命中 8,448 个缓存 token | 优先复用宿主模型能力；对不支持追加更新的路由，再验证 `persona: ''` 与边界约束方案 |
+| [#8 persona 破坏缓存前缀](https://github.com/omdsh-dev/dsh-sidechain/issues/8) | 按 Flash 范围关闭；当前默认 `deepseek-flash` 支持宿主追加 system 更新，保留默认 persona 的两个子会话首次请求均命中 8,448 个缓存 token | 优先复用宿主模型能力；其他路由与超长上下文的结果仍需分别验证 |
 | [#5 缺少未闭合回合](https://github.com/omdsh-dev/dsh-sidechain/issues/5) | 新版 fork provider 仍截取最后一个 `turn/end`；没有自动解决 | 在宿主复用精确事件切点和现有 fork 修复原语 |
 
 ### #9：把真实加载合同作为发布边界
@@ -92,4 +92,4 @@
 
 ## 推荐后续顺序
 
-先发布并复测本次兼容版本，更新 #9 和 #3 的验证证据；#8 先补长上下文及其他模型路由的对照，默认 Flash 已有真实缓存命中，暂不添加新策略；主要功能改造优先推进 #5 的宿主 fork 边界扩展。两项增强共用一个基础：不可变的父会话快照，加上子会话自己的边界后缀。
+默认分支已包含本次兼容版本，#9 与 #8（Flash 范围）已关闭。主要功能改造优先推进 #5 的宿主 fork 边界扩展；#3 保留开放，等待旧数据复现。缓存方面可继续补长上下文及其他模型路由的对照，暂不添加新策略。两项增强共用一个基础：不可变的父会话快照，加上子会话自己的边界后缀。
