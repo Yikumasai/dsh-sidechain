@@ -1,0 +1,49 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Sidechain",
+    "zh": "Sidechain 侧会话"
+  },
+  "plugins": [
+    {
+      "name": "@dsh-external/dsh-sidechain",
+      "title": {
+        "en": "Sidechain",
+        "zh": "Sidechain 侧会话"
+      },
+      "description": {
+        "en": "Ask a quick /btw question or continue a /side conversation with inherited context and a separate history.",
+        "zh": "用 /btw 随时侧问，用 /side 持续追问；继承主会话上下文，保持独立记录。"
+      },
+      "icon": "./icon.svg",
+      "author": "omdsh-dev",
+      "homepage": "https://github.com/omdsh-dev/dsh-sidechain#readme",
+      "repository": {
+        "url": "https://github.com/omdsh-dev/dsh-sidechain"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "sidechain",
+          "subagent",
+          "side",
+          "btw"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.2.1-rc.2",
+          "publishTimestamp": 1792390419,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/omdsh-dev/dsh-sidechain",
+            "commit": "ace651ca71a51f65fa631ff62ca2689c6d7a03d2"
+          },
+          "engines": {
+            "dsh": "0.2.1-rc.2"
+          }
+        }
+      ]
+    }
+  ]
+}
