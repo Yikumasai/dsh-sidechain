@@ -27,7 +27,7 @@ Sidechain 版本、`package.json` 的 `engines.dsh`、插件清单和全部 DSH 
 
 ### 插件市场发布与安装验收
 
-市场索引为 `https://omdsh-dev.github.io/dsh-sidechain/index.json`，通过 GitHub Pages 的 `master /docs` 分支源发布。索引只包含 `0.2.1-rc.2`，版本和兼容范围来自包清单，安装固定到源码提交 `9f956d8e1f6276f7c98d391f7590faf011d63c68`。旧 `0.6.x` Git 标签保留但不进入索引，避免 RC.2 市场把缺少兼容声明的 `0.6.2` 推荐成更新。
+市场索引为 `https://omdsh-dev.github.io/dsh-sidechain/index.json`，通过 GitHub Pages 从 `master` 的 `docs/` 目录发布。索引只包含 `0.2.1-rc.2`，版本和兼容范围来自包清单，安装固定到源码提交 `9f956d8e1f6276f7c98d391f7590faf011d63c68`。旧 `0.6.x` Git 标签保留但不进入索引，避免 RC.2 市场把缺少兼容声明的 `0.6.2` 推荐成更新。
 
 首次真实安装暴露 pnpm `11.28.5` 的 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`：DSH RC.2 将它显示为通用失败，没有可用的构建授权按钮。因此 Git 发布包改为携带生成的 `lib/` 并移除 `prepare`；`pnpm build:market` 重新构建并检查产物与已提交内容一致，再生成索引。无需修改 DSH 或让用户手工放行安装脚本。
 
