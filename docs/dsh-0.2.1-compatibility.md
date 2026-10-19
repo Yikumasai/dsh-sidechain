@@ -25,6 +25,16 @@ Sidechain 版本、`package.json` 的 `engines.dsh`、插件清单和全部 DSH 
 
 #9、#8 的既有关闭结论保留；RC.2 再次验证浏览器加载及默认 Flash 缓存命中。#3 没有旧失败数据可用于验证。#5 仍依赖宿主 fork 支持未闭合回合，按用户要求保持开放，本次不实现。
 
+### 插件市场发布与安装验收
+
+市场索引为 `https://omdsh-dev.github.io/dsh-sidechain/index.json`，通过 GitHub Pages 的 `master /docs` 分支源发布。索引只包含 `0.2.1-rc.2`，版本和兼容范围来自包清单，安装固定到源码提交 `9f956d8e1f6276f7c98d391f7590faf011d63c68`。旧 `0.6.x` Git 标签保留但不进入索引，避免 RC.2 市场把缺少兼容声明的 `0.6.2` 推荐成更新。
+
+首次真实安装暴露 pnpm `11.28.5` 的 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`：DSH RC.2 将它显示为通用失败，没有可用的构建授权按钮。因此 Git 发布包改为携带生成的 `lib/` 并移除 `prepare`；`pnpm build:market` 重新构建并检查产物与已提交内容一致，再生成索引。无需修改 DSH 或让用户手工放行安装脚本。
+
+公开索引返回 HTTP 200、没有重定向，通过官方 `parseMarketIndex` 校验。全新隔离 Web profile 的可见 Chromium 从该 HTTPS 索引进入版本页、确认完整 Git SHA、下载并启用插件；实际依赖位于 profile 的独立 pnpm 安装目录，锁文件指向上述提交，没有源码链接或构建脚本授权配置。市场卡片展示名称、图标、双语描述、作者、主页和源码链接，只推荐 RC.2。
+
+安装后的真实 `deepseek-official / deepseek-flash` 已验证父会话、`/btw` 继承随机代号且侧栏只读、`/side` 调用 `read` 读取随机文件、续聊回忆两项内容、刷新后重新选择线程并恢复历史。父日志不含子文件内容或子代理通知。子会话首次请求分别命中 8,576 和 8,704 个缓存 token，没有记录到未捕获的浏览器脚本错误。证据位于忽略入库的 `dist/market-install/`；本轮未重复 Electron、旧版会话迁移和其他模型验证。
+
 以下为 alpha.2 阶段的历史记录，模型用量和验证结论仅属于当时的基线。
 
 ## alpha.2 历史基线与完成范围
