@@ -35,8 +35,7 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "build:market": "node scripts/build-market.mjs",
-    "prepare": "tsdown",
+    "build:market": "pnpm build && git diff --exit-code HEAD -- lib && node scripts/build-market.mjs",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
     "test": "vitest run",
     "check": "pnpm run typecheck && pnpm run test && pnpm run build"

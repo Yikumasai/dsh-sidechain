@@ -11,6 +11,7 @@ const pluginManifest = JSON.parse(git('show', `${commit}:dsh.plugin.json`))
 assert.equal(manifest.version, manifest.engines.dsh, 'Sidechain version must match DSH')
 assert.equal(pluginManifest.version, manifest.version, 'Plugin version must match the package')
 assert.equal(pluginManifest.engines.dsh, manifest.engines.dsh, 'Plugin DSH requirement must match the package')
+assert.ok(!manifest.scripts.prepare, 'Git market packages must ship built files without prepare')
 const locales = ['en', 'zh'].map(language => [
   language, JSON.parse(git('show', `${commit}:locale/${language}.json`)).meta,
 ])

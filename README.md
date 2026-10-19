@@ -33,7 +33,7 @@ DSH 侧会话插件。它通过 fork 当前会话创建隔离子会话，让用�
 https://omdsh-dev.github.io/dsh-sidechain/index.json
 ```
 
-选择 **Sidechain 侧会话**，确认版本与 DSH 一致后点击安装。索引中的 Git 来源固定到完整提交 SHA。首次安装若提示依赖构建脚本被阻止，检查来源后点击**允许这些脚本并重试**。
+选择 **Sidechain 侧会话**，确认版本与 DSH 一致后点击安装。索引中的 Git 来源固定到完整提交 SHA，发布包包含编译产物，无需为 Sidechain 授权安装构建脚本。
 
 市场只提供当前支持的版本。DSH RC.2 尚不支持市场内直接升级，已安装旧版时需先卸载再安装；保留 DSH home 中的会话和 `sidechain-children.json`。
 
@@ -51,7 +51,7 @@ dsh plugin --profile web add github:omdsh-dev/dsh-sidechain
 dsh plugin --profile web add /absolute/path/to/dsh-sidechain
 ```
 
-pnpm 10 及以上首次安装会提示允许 Git 依赖执行 `prepare`。按命令输出把插件键加入 Web profile 的 `pnpm-workspace.yaml`，然后重新执行安装命令。
+Git 发布包自带 `lib/`，不执行 `prepare`。开发源码时需显式运行 `pnpm build`。
 
 插件会向 Web profile 添加以下配置：
 
@@ -166,9 +166,9 @@ pnpm check
 
 ### 发布插件市场
 
-GitHub Pages 从 `master` 的 `docs/` 发布索引。完成适配并提交代码后，运行 `pnpm build:market`，再提交生成的 `docs/index.json`、`docs/icon.svg` 并推送 `master`。Pages 随推送自动更新，无需额外的 Actions 工作流。
+GitHub Pages 从 `master` 的 `docs/` 发布索引。完成适配后运行 `pnpm build`，将源码与生成的 `lib/` 一起提交；随后运行 `pnpm build:market`，再提交生成的 `docs/index.json`、`docs/icon.svg` 并推送 `master`。Pages 随推送自动更新，无需额外的 Actions 工作流。
 
-`scripts/build-market.mjs` 从当前 Git 提交读取包清单、语言文件和图标；版本、兼容范围、发布时间和安装 SHA 均派生自同一提交。生成文件不手工编辑；每次发布代码时重新生成，确保索引固定到该次发布的源码。
+`pnpm build:market` 先重新构建并检查 `lib/` 与已提交产物一致，再由 `scripts/build-market.mjs` 从当前 Git 提交读取包清单、语言文件和图标；版本、兼容范围、发布时间和安装 SHA 均派生自同一提交。生成文件不手工编辑；每次发布代码时重新生成，确保索引固定到该次发布的源码。
 
 索引仅列当前版本，不扫描历史标签，避免旧独立版本号 `0.6.x` 被市场误判为推荐更新。旧 Git 标签保留，npm 发布不是安装前提。
 
