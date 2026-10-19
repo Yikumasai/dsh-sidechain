@@ -3,7 +3,7 @@
  * settlements stop before they enter the parent inbox, everything else passes.
  */
 
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -130,6 +130,21 @@ describe('createSettlementSilence', () => {
 })
 
 describe('durable child-id registry', () => {
+  it('rejects corrupt identity data and refuses to reserve a child when its identity cannot be saved', () => {
+    const path = join(process.env.DSH_HOME!, 'sidechain-children.json')
+    writeFileSync(path, '{')
+    expect(() => setup()).toThrow()
+    writeFileSync(path, '[42]')
+    expect(() => setup()).toThrow()
+    writeFileSync(path, '[]')
+    const { silence } = setup()
+    const blockedHome = join(process.env.DSH_HOME!, 'blocked')
+    mkdirSync(join(blockedHome, 'sidechain-children.json'), { recursive: true })
+    vi.stubEnv('DSH_HOME', blockedHome)
+    expect(() => silence.reserveChild(fakeAgent())).toThrow()
+    silence.dispose()
+  })
+
   it('persists recorded ids under DSH_HOME and reloads them', () => {
     const home = process.env.DSH_HOME!
     const first = setup()

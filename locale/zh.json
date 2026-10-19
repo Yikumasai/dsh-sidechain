@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sidechain 侧会话",
+    "description": "用 /btw 随时侧问，用 /side 持续追问；继承主会话上下文，保持独立记录。"
+  }
+}

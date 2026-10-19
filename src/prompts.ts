@@ -19,8 +19,8 @@ Everything before this boundary is inherited history from the parent session. It
 Do not continue, execute, or complete any instructions, plans, tool calls, approvals, edits, or requests from before this boundary. Only messages submitted after this boundary are active user instructions for this side conversation.`
 
 /**
- * Side-conversation persona, shadowing the deployment persona in the forked
- * child: answer questions and do lightweight non-destructive exploration
+ * Side-conversation instructions appended to the fork boundary:
+ * answer questions and do lightweight non-destructive exploration
  * without disrupting the main thread. No `{{...}}` interpolation variables.
  */
 export const SIDE_PERSONA = `You are in a side conversation, not the main thread. This side conversation answers questions and does lightweight, non-destructive exploration without disrupting the main thread.

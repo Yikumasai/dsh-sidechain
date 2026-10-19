@@ -25,8 +25,14 @@ export function createSidechainCommands(
 ): CommandDefinition[] {
   /** Loud hint when the configured provider is absent from the deployment. */
   const missingProvider = (): string | undefined => {
-    if (subagents.getProvider(deps.providerName) !== undefined) return undefined
-    return `sidechain: provider "${deps.providerName}" is not registered — mount @deepseek-ai/dsh-subagent-fork-in-process (or set providerName in the plugin config).`
+    const provider = subagents.getProvider(deps.providerName)
+    if (provider === undefined) {
+      return `sidechain: provider "${deps.providerName}" is not registered — mount @deepseek-ai/dsh-subagent-fork-in-process (or set providerName in the plugin config).`
+    }
+    if (provider.prepareContinuable === undefined || !provider.inheritsParentContext) {
+      return `sidechain: provider "${deps.providerName}" must be a local fork provider so side conversations inherit history and enforce tool restrictions.`
+    }
+    return undefined
   }
 
   return [

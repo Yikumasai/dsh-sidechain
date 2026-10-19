@@ -2,7 +2,7 @@
 
 DSH 侧会话插件。它通过 fork 当前会话创建隔离子会话，让用户在不中断主线程的情况下发起一次性问题或持续对话。
 
-当前 Sidechain 与所适配的 DSH 版本均为 `0.2.1-alpha.2`，依赖已发布到 npm。Sidechain 的版本号始终与目标 DSH 完全一致，包括预发布后缀；旧版 DSH 不在此版本的兼容范围内。
+当前 Sidechain 与所适配的 DSH 版本均为 `0.2.1-rc.2`，DSH 依赖已发布到 npm。Sidechain 的版本号始终与目标 DSH 完全一致，包括预发布后缀；旧版 DSH 不在此版本的兼容范围内。
 
 | 命令 | 用途 |
 |---|---|
@@ -25,9 +25,21 @@ DSH 侧会话插件。它通过 fork 当前会话创建隔离子会话，让用�
 
 依赖 DSH 提供的 `@deepseek-ai/dsh-subagent`、`@deepseek-ai/dsh-subagent-fork-in-process`、`@deepseek-ai/dsh-session-projection` 和 `@deepseek-ai/dsh-commands`。默认 Web profile 已包含这些依赖。
 
-### 安装
+### 从插件市场安装
 
-默认 `master` 分支已包含本次适配。使用 **0.2.1-alpha.2** 的 CLI 安装或更新：
+在 DSH **插件 → 实验性插件 → 更多** 中启用**自定义插件市场**，打开**发现 → 添加索引源**，填入：
+
+```text
+https://omdsh-dev.github.io/dsh-sidechain/index.json
+```
+
+选择 **Sidechain 侧会话**，确认版本与 DSH 一致后点击安装。索引中的 Git 来源固定到完整提交 SHA。首次安装若提示依赖构建脚本被阻止，检查来源后点击**允许这些脚本并重试**。
+
+市场只提供当前支持的版本。DSH RC.2 尚不支持市场内直接升级，已安装旧版时需先卸载再安装；保留 DSH home 中的会话和 `sidechain-children.json`。
+
+### 从命令行安装
+
+使用包含 RC.2 适配的插件版本，并用 **0.2.1-rc.2** 的 CLI 安装或更新：
 
 ```sh
 dsh plugin --profile web add github:omdsh-dev/dsh-sidechain
@@ -63,9 +75,15 @@ dsh plugin --profile web remove @dsh-external/dsh-sidechain
 
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
-| `providerName` | `fork` | 用于创建子会话的 subagent provider |
-| `persona` | 内置侧会话 persona | 侧会话的行为约束；空字符串表示沿用部署 persona |
-| `readOnlyTools` | 未设置 | 可选工具 allow-list，例如 `['read', 'grep', 'glob']` |
+| `providerName` | `fork` | 继承父历史、支持本地 continuable 会话的 fork provider |
+| `persona` | 内置侧会话 persona | 追加到首条边界消息的行为约束；空字符串表示不追加；子会话继承父方 system persona |
+| `readOnlyTools` | 未设置 | 可选工具 allow-list，例如 `['read', 'grep', 'glob']`；隐藏不允许的继承工具，并在执行入口拒绝白名单外的工具 |
+
+RC.2 已删除 subagent 启动参数中的 `persona` 和 `toolFilter`。插件保留上述配置入口：`persona` 作为子会话自己的用户消息持久化，不覆盖父方 system prompt；`readOnlyTools` 在侧会话创建、恢复及插件重新加载时应用当前配置，不依赖模型遵守提示词。旧子会话 descriptor 中的历史限制仍由 DSH 恢复，并与当前工具限制取交集。工具名称无效时创建失败；空列表与未设置均表示不增加限制。
+
+宿主在子会话本地注册的工具可能仍显示在 schema 中，例如 `subagent`，但白名单外的调用会被执行守卫拒绝。PTC 的 `run_code` 传输入口保留，其调用的具体工具仍受白名单约束。
+
+侧会话身份继续保存在 `DSH_HOME/sidechain-children.json`，用于恢复工具限制和父收件箱隔离。请保留此文件；文件损坏或不可写会明确报错，避免静默丢失保护。
 
 配置示例：
 
@@ -131,7 +149,7 @@ fork 只继承父会话已经完成的回合。继承内容仅作为参考，bou
 ## 限制
 
 - fork 不包含父会话正在进行的回合。
-- DSH `0.2.1-alpha.2` 将新建本地子会话统一存为 `continuable`。本插件从父会话已有命令结果投影出 `/btw` 身份，重启后仍保持侧栏只读；这不是宿主层的不可续聊权限，DSH 原生子代理入口或其他调用方仍可能续聊。需要正常追问时使用 `/side`。
+- DSH `0.2.1-rc.2` 将新建本地子会话统一存为 `continuable`。本插件从父会话已有命令结果投影出 `/btw` 身份，重启后仍保持侧栏只读；这不是宿主层的不可续聊权限，DSH 原生子代理入口或其他调用方仍可能续聊。需要正常追问时使用 `/side`。
 - `/side list` 和侧栏列出当前会话的全部直接子代理，不限于本插件创建的线程。
 - `/side` 必须带首个问题；当前 subagent API 不支持创建后等待首次输入的空线程。
 
@@ -142,9 +160,17 @@ pnpm install
 pnpm check
 ```
 
-`pnpm check` 依次执行类型检查、测试和构建。依赖固定到 DSH `0.2.1-alpha.2`，可直接从 npm registry 安装。
+`pnpm check` 依次执行类型检查、测试和构建。依赖固定到 DSH `0.2.1-rc.2`，可直接从 npm registry 安装。
 
-版本以 `dsh.plugin.json` 的 `engines.dsh` 为准；每次适配 DSH 时，同步 `package.json` 和插件清单的 `version`，不再独立递增 Sidechain 版本。构建时校验三者一致，避免安装版本与兼容声明分叉。
+版本以宿主读取的 `package.json` 中 `engines.dsh` 为准；每次适配 DSH 时，同步包版本、插件清单版本及其 `engines.dsh`，不再独立递增 Sidechain 版本。构建时校验四者一致，避免安装版本与兼容声明分叉。
+
+### 发布插件市场
+
+GitHub Pages 从 `master` 的 `docs/` 发布索引。完成适配并提交代码后，运行 `pnpm build:market`，再提交生成的 `docs/index.json`、`docs/icon.svg` 并推送 `master`。Pages 随推送自动更新，无需额外的 Actions 工作流。
+
+`scripts/build-market.mjs` 从当前 Git 提交读取包清单、语言文件和图标；版本、兼容范围、发布时间和安装 SHA 均派生自同一提交。生成文件不手工编辑；每次发布代码时重新生成，确保索引固定到该次发布的源码。
+
+索引仅列当前版本，不扫描历史标签，避免旧独立版本号 `0.6.x` 被市场误判为推荐更新。旧 Git 标签保留，npm 发布不是安装前提。
 
 浏览器适配使用 `ctx.remote`、Session Controller 的 `projectionsBySession` 和 `assistantStream` 开场快照。`sidechainModes` 投影只从已有 `command/done` 记录推导命令身份，不根据可变标题猜测类型，也不另存一份身份记录。首次启动使用 `delivery: 'caller'`，持久化的父收件箱过滤继续保护冷启动后的续聊。
 

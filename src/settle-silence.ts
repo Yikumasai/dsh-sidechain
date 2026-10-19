@@ -24,6 +24,7 @@ const DELIVERY_METHODS: readonly DeliveryMethod[] = ['followup', 'steer', 'injec
 
 /** Per-plugin-instance settlement suppression face. */
 export interface SettlementSilence {
+  hasChild(childId: SessionId): boolean
   /** Reserve a child id before asynchronous child startup can settle. */
   reserveChild(parent: Agent): SessionId
   /** Register and immediately protect the parent of one side child. */
@@ -39,25 +40,19 @@ function registryPath(): string {
 }
 
 function loadChildren(): Set<SessionId> {
-  try {
-    const path = registryPath()
-    if (!existsSync(path)) return new Set()
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
-    if (!Array.isArray(parsed)) return new Set()
-    return new Set(parsed.filter((id): id is SessionId => typeof id === 'string'))
-  } catch {
-    return new Set()
+  const path = registryPath()
+  if (!existsSync(path)) return new Set()
+  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+  if (!Array.isArray(parsed) || !parsed.every((id: unknown): id is string => typeof id === 'string')) {
+    throw new Error(`sidechain: invalid child registry at ${path}; expected an array of session ids`)
   }
+  return new Set(parsed.map(id => SessionId(id)))
 }
 
 function saveChildren(children: ReadonlySet<SessionId>): void {
-  try {
-    const path = registryPath()
-    mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, JSON.stringify([...children]), 'utf8')
-  } catch {
-    // An unwritable home is non-fatal; the in-process guard still works.
-  }
+  const path = registryPath()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, JSON.stringify([...children]), 'utf8')
 }
 
 interface SettlementSource {
@@ -102,6 +97,7 @@ export function createSettlementSilence(ctx: Context): SettlementSilence {
   const removeCreatedListener = ctx.on('agent/created', ({ agent }) => { protect(agent); return undefined })
 
   return {
+    hasChild: childId => children.has(childId),
     reserveChild(parent): SessionId {
       protect(parent)
       const childId = SessionId(randomUUID())

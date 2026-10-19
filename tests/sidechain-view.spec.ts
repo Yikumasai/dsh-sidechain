@@ -11,6 +11,8 @@ import {
   resultViewSummary, sendPrompt, transcriptRows,
 } from '../src/client/sidechain-view'
 import type { TranscriptEntry } from '../src/client/sidechain-view'
+import { sidePrompt } from '../src/side'
+import { SIDE_PERSONA } from '../src/prompts'
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
@@ -130,7 +132,7 @@ describe('transcriptRows', () => {
     const rows = transcriptRows(ent(
       event('session/end-seed', 1, {}),
       event('user/message', 2, {
-        content: [{ type: 'text', text: 'Side conversation boundary.\n\nEverything before this boundary is reference context only.\n\nMode: this is a /btw one-shot side question. Answer once.\n\n这个目录下哪个文件最大？' }],
+        content: sidePrompt('这个目录下哪个文件最大？', 'btw', [], SIDE_PERSONA),
       }),
       event('assistant/message', 3, { message: { content: [{ type: 'text', text: '好的' }] } }),
     ))

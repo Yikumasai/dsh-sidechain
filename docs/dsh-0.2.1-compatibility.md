@@ -1,6 +1,33 @@
 # DSH 0.2.1 适配记录与后续方案
 
-## 基线与完成范围
+## RC.2 当前适配
+
+Sidechain 版本、`package.json` 的 `engines.dsh`、插件清单和全部 DSH 依赖同步到官方 `0.2.1-rc.2`；Cordis 为 `4.0.5`，Schemastery 为 `3.18.5`。浏览器验收使用本地 DSH 源码 `687f282e8625c6b8d11ff58211a90524be2e4317`，通过官方源码 CLI 的 Web profile 启动。未修改 DSH 源码。
+
+### 接口迁移
+
+- 新宿主优先读取包自身的 `engines.dsh`；构建校验它与包版本、插件清单版本及兼容声明一致。
+- `SubagentStartRequest` 已移除 `persona`、`toolFilter`。fork 必须继承父 preset；插件将 `persona` 内容放进子会话第一条边界消息，保留行为指导而不替换 system persona。默认及空字符串配置均有验证，侧栏只显示用户问题。
+- `readOnlyTools` 通过 `agent/created` 在第一轮执行前恢复到子作用域；`tools.restrict` 过滤继承工具，`tools.guard` 阻止包括子作用域工具在内的白名单外执行。仅 PTC `run_code` 传输入口保留，具体工具仍过守卫。卸载释放所有贡献，重载重新应用当前配置。
+- 工具限制复用已有持久化子会话身份，不增加第二份注册表。损坏或不可写的身份文件会报错。外部执行或不继承历史的 provider 在创建前被拒绝，防止避开本地限制。
+
+### 验证证据
+
+使用可见 Chromium、真实 `deepseek-official / deepseek-flash`，未替换或拦截模型请求；实验采用独立 DSH home、工作目录和官方目录选择器 overlay。证据保存在忽略入库的 `dist/rc2-real-model/`。
+
+已验证 `/btw` 继承随机父代号并只读，`/side` 由真实模型读取随机文件值、续聊回忆、刷新恢复、生成中部分输出、原生子代理历史入口，以及宿主冷重启后的历史和续聊。父日志没有子文件内容或子代理通知。默认配置下，两个子会话首请求分别记录到 8,576 和 8,704 个 `cacheReadTokens`，子会话没有新增替换 persona 的 system 消息。
+
+冷启动时启用 `readOnlyTools: [read, grep, glob]`，恢复的侧会话继续回答；新侧会话成功读取文件，真实模型尝试调用 `write` 时收到 `not allowed by readOnlyTools`，目标文件未创建。父会话新请求仍保留 `write`、`bash`。宿主自己的 `subagent` 工具仍出现在子 schema 中，但插件的执行守卫会拒绝白名单外调用；这一分支另用真实工具注册表验证，包含后注册工具、重载、恢复、卸载及父/其他会话不受影响。模型实测没有发出 `subagent` 调用，不将它算作真实模型调用通过。
+
+类型检查、插件测试及 Host/Client 构建已通过。记录到的浏览器验收没有插件异常；宿主仍有 `/open-in-app/icon/filemanager` 的 HTTP 404。此次未验证旧 alpha 会话迁移、Electron、完整附件交互、PTC 实际模型调用或长上下文/其他模型缓存；启用工具白名单会改变请求工具集合，默认配置的缓存结果不适用于该场景。
+
+### Issue 状态边界
+
+#9、#8 的既有关闭结论保留；RC.2 再次验证浏览器加载及默认 Flash 缓存命中。#3 没有旧失败数据可用于验证。#5 仍依赖宿主 fork 支持未闭合回合，按用户要求保持开放，本次不实现。
+
+以下为 alpha.2 阶段的历史记录，模型用量和验证结论仅属于当时的基线。
+
+## alpha.2 历史基线与完成范围
 
 - Sidechain：默认 `master` 分支，版本 `0.2.1-alpha.2`，与所适配的 DSH 一致。
 - DSH：源码 `d743267388641bc76f17c45ce8b4c231aed1d32c`，版本 `0.2.1-alpha.2`。

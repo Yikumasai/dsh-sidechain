@@ -15,8 +15,8 @@ import type {
   SubagentActivation,
   SubagentActivationSpec,
   SubagentCatalogEntry,
+  SubagentProvider,
 } from '@deepseek-ai/dsh-subagent'
-import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import { SIDE_BOUNDARY_PROMPT, SIDE_MODE_LINE, type SideMode } from './prompts.ts'
 import type { SidechainModes } from './sidechain-projection.ts'
 
@@ -24,17 +24,15 @@ import type { SidechainModes } from './sidechain-projection.ts'
 export interface SubagentsLike {
   startActivation(spec: SubagentActivationSpec): Promise<SubagentActivation>
   listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentCatalogEntry[]>
-  getProvider(name: string): { readonly name: string } | undefined
+  getProvider(name: string): Pick<SubagentProvider, 'name' | 'inheritsParentContext' | 'prepareContinuable'> | undefined
 }
 
 /** Shared side-conversation behavior for both commands. */
 export interface SideDeps {
   /** Provider name on `ctx.subagents`; the fork backend registers as `fork`. */
   providerName: string
-  /** Persona shadowing the deployment persona inside side-conversation children. */
+  /** Side-conversation instructions appended after the inherited-history boundary. */
   persona?: string
-  /** Optional allow-list restriction applied to side-conversation children. */
-  toolFilter?: ToolRestriction
 }
 
 /** Maximum code points kept in a durable child label. */
@@ -58,9 +56,10 @@ export function sidePrompt(
   question: string,
   mode: SideMode,
   attachments: readonly ContentBlock[] = [],
+  persona?: string,
 ): ContentBlock[] {
   return [
-    textBlock(`${SIDE_BOUNDARY_PROMPT}\n\n${SIDE_MODE_LINE[mode]}\n\n${question.trim()}`),
+    textBlock([SIDE_BOUNDARY_PROMPT, persona, SIDE_MODE_LINE[mode], question.trim()].filter(Boolean).join('\n\n')),
     ...attachments,
   ]
 }
@@ -85,10 +84,8 @@ export function askSideOneShot(
     label: `BTW: ${truncateLabel(question)}`,
     ...(childId === undefined ? {} : { childId }),
     request: {
-      prompt: sidePrompt(question, 'btw', attachments),
+      prompt: sidePrompt(question, 'btw', attachments, deps.persona),
       parent,
-      ...(deps.persona === undefined ? {} : { persona: deps.persona }),
-      ...(deps.toolFilter === undefined ? {} : { toolFilter: deps.toolFilter }),
     },
     signal,
     delivery: 'caller',
@@ -115,10 +112,8 @@ export function startSideConversation(
     label,
     ...(childId === undefined ? {} : { childId }),
     request: {
-      prompt: sidePrompt(question, 'side', attachments),
+      prompt: sidePrompt(question, 'side', attachments, deps.persona),
       parent,
-      ...(deps.persona === undefined ? {} : { persona: deps.persona }),
-      ...(deps.toolFilter === undefined ? {} : { toolFilter: deps.toolFilter }),
     },
     signal,
     delivery: 'caller',
